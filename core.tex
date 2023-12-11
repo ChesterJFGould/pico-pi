@@ -1,10 +1,19 @@
 \documentclass{article}
 
+\usepackage{amsmath}
 \usepackage{mathpartir}
 
 \begin{document}
 
-\newcommand{\lam}[2]{\lambda #1. #2}
+\newcommand{\spc}[0]{\hspace{0.3em}}
+\newcommand{\lam}[2]{(\lambda #1 \spc #2)}
+\newcommand{\app}[2]{(#1 \spc #2)}
+\newcommand{\arr}[2]{(\to #1 \spc #2)}
+\newcommand{\elet}[3]{(\text{let} \spc #1 \spc #2 \spc #3)}
+\newcommand{\Type}[2]{(\text{Type} \spc #1 \spc #2)}
+\newcommand{\Level}[1]{(\text{Level} \spc #1)}
+\newcommand{\lzero}[0]{(\text{lzero})}
+\newcommand{\lsucc}[1]{(\text{lsucc} \spc #1)}
 
 \section{Syntax}
 
@@ -12,8 +21,22 @@ $e ::=$
 
 $| x$
 
-$| ()$
+$| \lam{b}{e} | \app{e}{e} | \arr{t}{e}$
 
-$| (\lam{x : e}{e})$
+$| \elet{b}{e}{e}$
+
+$| \Type{n}{e} | \Level{n} | \lzero | \lsucc{e}$
+\\\\
+$b ::=$
+
+$| x$
+
+$| [x : e]$
+\\\\
+$t ::=$
+
+$| [x : e]$
+
+$| e$
 
 \end{document}
