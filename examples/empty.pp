@@ -1,2 +1,2 @@
-(λ [e : Empty]
-  ((ind-Empty (λ [_ : Empty] (-> (Type 5) (Type 0))) e) (Type 4)))
+(λ [e : (Empty : (Type 0 lzero))]
+  ((ind-Empty ((lsucc (lsucc lzero)) : ((Level 5) : (Type 6 lzero))) e (λ _ (-> (Type 5 (lsucc lzero)) (Type 0 lzero)))) (Type 5 lzero)))

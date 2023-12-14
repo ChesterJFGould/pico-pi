@@ -1,5 +1,5 @@
-(def [Nat : (Type 1)]
-  (Π [X : (Type 0)]
+(def [Nat : (Type 0 (lsucc lzero))]
+  (Π [X : (Type 0 lzero)]
     (Π [zero : X]
       (Π [succ : (-> X X)]
         X))))

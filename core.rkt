@@ -29,7 +29,7 @@
 
 (struct EmptyT () #:transparent)
 
-(struct (r) IndEmpty ([level : r] [motive : r] [target : r]) #:transparent)
+(struct (r) IndEmpty ([level : r] [t : r] [motive : r]) #:transparent)
 
 (struct UnitT () #:transparent)
 
@@ -100,7 +100,7 @@
 
 (struct NApp ([fun : Neutral] [arg : Value]) #:transparent)
 
-(struct NIndEmpty ([level : Value] [motive : Value] [target : Neutral]) #:transparent)
+(struct NIndEmpty ([level : Value] [t : Neutral] [motive : Value]) #:transparent)
 
 (struct NLMaxL ([l : Neutral] [r : Value]) #:transparent)
 
@@ -135,8 +135,8 @@
     [`(Level ,(? natural? y)) (Level y)]
     [`(lsucc ,l) (LSucc (parse/expr l))]
     [`(lmax ,l ,r) (LMax (parse/expr l) (parse/expr r))]
-    [`(ind-Empty ,l ,m ,t)
-      (IndEmpty (parse/expr l) (parse/expr m) (parse/expr t))]
+    [`(ind-Empty ,l ,t ,m)
+      (IndEmpty (parse/expr l) (parse/expr t) (parse/expr m))]
     [`() (UnitLit)]
     [`(= ,t ,l ,r) (EqT (parse/expr t) (parse/expr l) (parse/expr r))]
     [`(ind-= ,l ,to ,t ,m ,refl)
@@ -188,8 +188,8 @@
     [(LSucc l) (VLSucc (eval/expr env l))]
     [(LMax l r) (do-lmax (eval/expr env l) (eval/expr env r))]
     [(EmptyT) (VEmptyT)]
-    [(IndEmpty l m t)
-      (do-ind-empty (eval/expr env l) (eval/expr env m) (eval/expr env t))]
+    [(IndEmpty l t m)
+      (do-ind-empty (eval/expr env l) (eval/expr env t) (eval/expr env m))]
     [(UnitT) (VUnitT)]
     [(UnitLit) (VUnit)]
     [(EqT t l r) (VEqT (eval/expr env t) (eval/expr env l) (eval/expr env r))]
@@ -238,7 +238,7 @@
   (match n
     [(NVar n) (Var n)]
     [(NApp f a) (App (quote/neutral f) (quote/value a))]
-    [(NIndEmpty l m n) (IndEmpty (quote/value l) (quote/value m) (quote/neutral n))]
+    [(NIndEmpty l n m) (IndEmpty (quote/value l) (quote/neutral n) (quote/value m))]
     [(NLMaxL l r) (LMax (quote/neutral l) (quote/value r))]
     [(NLMaxR l r) (LMax (quote/value l) (quote/neutral r))]
     [(NIndEq l to t m refl)
@@ -260,9 +260,9 @@
     [(VNeu n (VPi env x b)) (VNeu (NApp n a) (eval/expr (env-set env x a) b))]))
 
 (: do-ind-empty (-> Value Value Value Value))
-(define (do-ind-empty l m t)
+(define (do-ind-empty l t m)
   (match t
-    [(VNeu n (VEmptyT)) (VNeu (NIndEmpty l m n) (do-app m t))]))
+    [(VNeu n (VEmptyT)) (VNeu (NIndEmpty l n m) (do-app m t))]))
 
 (: do-ind-eq (-> Value Value Value Value Value Value))
 (define (do-ind-eq l to t m refl)
@@ -417,17 +417,17 @@
         ([(x^) (check/expr tenv venv x (VLevel y))]
          [(x-v) (eval/expr venv x^)])
         (values (Type y x^) (VType y (VLSucc x-v))))]
-    [(IndEmpty l m t)
+    [(IndEmpty l t m)
       (let*-values
         ([(l^ l-y) (synth/expr-level tenv venv l)]
+         [(t^) (check/expr tenv venv t (VEmptyT))]
          [(m^)
            (check/expr
              tenv
              venv
              m
-             (VPi venv (VBind (gensym) (VEmptyT)) (Type l-y l^)))]
-         [(t^) (check/expr tenv venv t (VEmptyT))])
-        (values (IndEmpty l^ m^ t^) (eval/expr venv (App m^ t^))))]
+             (VPi venv (VBind (gensym) (VEmptyT)) (Type l-y l^)))])
+        (values (IndEmpty l^ t^ m^) (eval/expr venv (App m^ t^))))]
     [(UnitLit) (values e (VUnitT))]
     [(EqT A from to)
       (let*-values
@@ -614,7 +614,7 @@
     [(LSucc l) `(lsucc ,(unparse/expr l))]
     [(LMax l r) `(lmax ,(unparse/expr l) ,(unparse/expr r))]
     [(EmptyT) 'Empty]
-    [(IndEmpty l m t) `(ind-Empty ,(unparse/expr l) ,(unparse/expr m) ,(unparse/expr t))]
+    [(IndEmpty l t m) `(ind-Empty ,(unparse/expr l) ,(unparse/expr t) ,(unparse/expr m))]
     [(UnitT) 'Unit]
     [(UnitLit) '()]
     [(EqT A from to) `(= ,(unparse/expr A) ,(unparse/expr from) ,(unparse/expr to))]
