@@ -7,4 +7,4 @@
             (-> (eq : (= A a b))
               (-> (p-a : (P a))
                 (P b)))))))]
-  (λ A (λ P (λ a (λ b (λ eq (λ p-a (ind-= lzero A a b (λ x (λ _ (P x))) eq p-a))))))))
+  (λ A (λ P (λ a (λ b (λ eq (λ p-a (ind-= (lzero : ((Level 0) : (Type 1 lzero))) b eq (λ x (λ _ (P x))) p-a))))))))

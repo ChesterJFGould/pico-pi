@@ -4,18 +4,18 @@
 
 ; Expr functor parameterized by bind type
 (define-type (Expr b r)
-  (U Var (Lam b r) (App r) (Pi r) (Let b r) (Type r) Level LZero (LSucc r)
-    (LMax r) EmptyT (IndEmpty r) UnitT UnitLit (EqT r) (Refl r) (IndEq r)))
+  (U Var (Ann r) (Lam b r) (App r) (Pi r) (Type r) Level LZero (LSucc r)
+    (LMax r) EmptyT (IndEmpty r) UnitT UnitLit (EqT r) Refl (IndEq r)))
 
 (struct Var ([name : Symbol]) #:transparent)
+
+(struct (r) Ann ([v : r] [t : r]) #:transparent)
 
 (struct (b r) Lam ([var : b] [body : r]) #:transparent)
 
 (struct (r) App ([fun : r] [arg : r]) #:transparent)
 
 (struct (r) Pi ([var : (TypedBind r)] [body : r]) #:transparent)
-
-(struct (b r) Let ([var : b] [val : r] [body : r]) #:transparent)
 
 (struct (r) Type ([y : Natural] [x : r]) #:transparent)
 
@@ -37,10 +37,10 @@
 
 (struct (r) EqT ([type : r] [l : r] [r : r]) #:transparent)
 
-(struct (r) Refl ([x : r]) #:transparent)
+(struct Refl () #:transparent)
 
 (struct (r) IndEq
-  ([l : r] [type : r] [from : r] [to : r] [m : r] [t : r] [refl : r])
+  ([l : r] [to : r] [t : r] [m : r] [refl : r])
   #:transparent)
 
 (struct (r) TypedBind ([name : Symbol] [type : r]) #:transparent)
@@ -89,7 +89,7 @@
 
 (struct VEqT ([type : Value] [l : Value] [r : Value]) #:transparent)
 
-(struct VRefl ([x : Value]) #:transparent)
+(struct VRefl () #:transparent)
 
 (struct VBind ([name : Symbol] [type : Value]) #:transparent)
 
@@ -107,8 +107,7 @@
 (struct NLMaxR ([l : Value] [r : Neutral]) #:transparent)
 
 (struct NIndEq
-  ([l : Value] [type : Value] [from : Value] [to : Value] [m : Value]
-    [t : Neutral] [refl : Value])
+  ([l : Value] [to : Value] [t : Neutral] [m : Value] [refl : Value])
   #:transparent)
 
 ; Env
@@ -127,10 +126,11 @@
     ['Unit (UnitT)]
     ['Empty (EmptyT)]
     [`lzero (LZero)]
+    [`Refl (Refl)]
     [(? symbol?) (parse/variable e)]
+    [`(,e : ,t) (Ann (parse/expr e) (parse/expr t))]
     [`(,(or 'λ 'lam) ,v ,b) (Lam (parse/bind v) (parse/expr b))]
     [`(,(or 'Π 'Pi '->) ,v ,b) (Pi (parse/typed-bind v) (parse/expr b))]
-    [`(let ,x ,v ,b) (Let (parse/bind x) (parse/expr v) (parse/expr b))]
     [`(Type ,(? natural? y) ,x) (Type y (parse/expr x))]
     [`(Level ,(? natural? y)) (Level y)]
     [`(lsucc ,l) (LSucc (parse/expr l))]
@@ -139,10 +139,9 @@
       (IndEmpty (parse/expr l) (parse/expr m) (parse/expr t))]
     [`() (UnitLit)]
     [`(= ,t ,l ,r) (EqT (parse/expr t) (parse/expr l) (parse/expr r))]
-    [`(Refl ,x) (Refl (parse/expr x))]
-    [`(ind-= ,l ,type ,from ,to ,m ,t ,r)
-      (IndEq (parse/expr l) (parse/expr type) (parse/expr from) (parse/expr to)
-        (parse/expr m) (parse/expr t) (parse/expr r))]
+    [`(ind-= ,l ,to ,t ,m ,refl)
+      (IndEq (parse/expr l) (parse/expr to) (parse/expr t) (parse/expr m)
+        (parse/expr refl))]
     [`(,f ,a ...)
       (foldl
         (λ ([a : AstExpr] [f : AstExpr]) (App f a))
@@ -179,10 +178,10 @@
 (define (eval/expr env expr)
   (match expr
     [(Var name) (env-ref env name)]
+    [(Ann v t) (eval/expr env v)]
     [(Lam x b) (VLam env (eval/bind env x) b)]
     [(App f a) (do-app (eval/expr env f) (eval/expr env a))]
     [(Pi x b) (VPi env (eval/bind env x) b)]
-    [(Let var val body) (eval/expr (env-set env var (eval/expr env val)) body)]
     [(Type y x) (VType y (eval/expr env x))]
     [(Level y) (VLevel y)]
     [(LZero) (VLZero)]
@@ -194,11 +193,10 @@
     [(UnitT) (VUnitT)]
     [(UnitLit) (VUnit)]
     [(EqT t l r) (VEqT (eval/expr env t) (eval/expr env l) (eval/expr env r))]
-    [(Refl x) (VRefl (eval/expr env x))]
-    [(IndEq l type from to m t refl)
-      (do-ind-eq (eval/expr env l) (eval/expr env type) (eval/expr env from)
-        (eval/expr env to) (eval/expr env m) (eval/expr env t)
-        (eval/expr env refl))]))
+    [(Refl) (VRefl)]
+    [(IndEq l to t m refl)
+      (do-ind-eq (eval/expr env l) (eval/expr env to) (eval/expr env t)
+        (eval/expr env m) (eval/expr env refl))]))
 
 (: eval/bind (-> VEnv TBind VBind))
 (define (eval/bind env b)
@@ -233,7 +231,7 @@
     [(VUnitT) (UnitT)]
     [(VUnit) (UnitLit)]
     [(VEqT A from to) (EqT (quote/value A) (quote/value from) (quote/value to))]
-    [(VRefl x) (Refl (quote/value x))]))
+    [(VRefl) (Refl)]))
 
 (: quote/neutral (-> Neutral TypedExpr))
 (define (quote/neutral n)
@@ -243,9 +241,9 @@
     [(NIndEmpty l m n) (IndEmpty (quote/value l) (quote/value m) (quote/neutral n))]
     [(NLMaxL l r) (LMax (quote/neutral l) (quote/value r))]
     [(NLMaxR l r) (LMax (quote/value l) (quote/neutral r))]
-    [(NIndEq l A from to m t refl)
-      (IndEq (quote/value l) (quote/value A) (quote/value from) (quote/value to)
-        (quote/value m) (quote/neutral t) (quote/value refl))]))
+    [(NIndEq l to t m refl)
+      (IndEq (quote/value l) (quote/value to) (quote/neutral t) (quote/value m)
+        (quote/value refl))]))
 
 (: quote/bind (-> VBind TBind))
 (define (quote/bind b)
@@ -266,12 +264,12 @@
   (match t
     [(VNeu n (VEmptyT)) (VNeu (NIndEmpty l m n) (do-app m t))]))
 
-(: do-ind-eq (-> Value Value Value Value Value Value Value Value))
-(define (do-ind-eq l type from to m t refl)
+(: do-ind-eq (-> Value Value Value Value Value Value))
+(define (do-ind-eq l to t m refl)
   (match t
-    [(VRefl x) refl]
+    [(VRefl) refl]
     [(VNeu n (VEqT _ _ _))
-      (VNeu (NIndEq l type from to m n refl) (do-app (do-app m to) t))]))
+      (VNeu (NIndEq l to n m refl) (do-app (do-app m to) t))]))
 
 (: do-lmax (-> Value Value Value))
 (define (do-lmax l r)
@@ -344,7 +342,7 @@
     [(cons (VUnit) (VUnit)) #t]
     [(cons (VEqT A-a from-a to-a) (VEqT A-b from-b to-b))
       (and (value=? A-a A-b) (value=? from-a from-b) (value=? to-a to-b))]
-    [(cons (VRefl a) (VRefl b)) (value=? a b)]
+    [(cons (VRefl) (VRefl)) #t]
     [_ #f]))
 
 (: neutral=? (-> Neutral Neutral Boolean))
@@ -359,15 +357,13 @@
     [(cons (NLMaxR l-a r-a) (NLMaxR l-b r-b))
       (and (value=? l-a l-b) (neutral=? r-a r-b))]
     [(cons
-      (NIndEq l-a A-a from-a to-a m-a t-a refl-a)
-      (NIndEq l-b A-b from-b to-b m-b t-b refl-b))
+      (NIndEq l-a to-a t-a m-a refl-a)
+      (NIndEq l-b to-b t-b m-b refl-b))
       (and
         (value=? l-a l-b)
-        (value=? A-a A-b)
-        (value=? from-a from-b)
         (value=? to-a to-b)
-        (value=? m-a m-b)
         (neutral=? t-a t-b)
+        (value=? m-a m-b)
         (value=? refl-a refl-b))]
     [_ #f]))
 
@@ -380,6 +376,12 @@
       (values
         e
         (env-ref tenv n (λ () (error 'synth/expr "Undefined variable: ~a" n))))]
+    [(Ann v t)
+      (let*-values
+        ([(t^ t-y t-x) (synth/expr-type tenv venv t)]
+         [(t-v) (eval/expr venv t^)]
+         [(v^) (check/expr tenv venv v t-v)])
+        (values (Ann v^ t^) t-v))]
     [(Lam x b)
       (let*-values
         ([(x^ x-t x-t-y x-t-x) (synth/bind tenv venv x)]
@@ -410,32 +412,22 @@
              [(> x-t-y b-y) x-t-x]
              [else b-x])])
         (values (Pi x^ b^) (VType t-y t-x)))]
-    [(Let x v b)
-      (let*-values
-        ([(x^ v^ v-t) (check/bind-expr tenv venv x v)]
-         [(b-tenv) (env-set tenv x^ v-t)]
-         [(b-venv) (env-set tenv x^ (eval/expr venv v^))]
-         [(b^ b-t) (synth/expr b-tenv b-venv b)])
-        (values (Let x^ v^ b^) b-t))]
     [(Type y x)
       (let*-values
         ([(x^) (check/expr tenv venv x (VLevel y))]
          [(x-v) (eval/expr venv x^)])
         (values (Type y x^) (VType y (VLSucc x-v))))]
-    [(Level y) (values e (VType (+ y 1) (VLZero)))]
-    [(EmptyT) (values e (VType 0 (VLZero)))]
     [(IndEmpty l m t)
       (let*-values
-        ([(l^) (check/expr tenv venv l (VLevel 0))]
+        ([(l^ l-y) (synth/expr-level tenv venv l)]
          [(m^)
            (check/expr
              tenv
              venv
              m
-             (VPi venv (VBind (gensym) (VEmptyT)) (Type 0 l^)))]
+             (VPi venv (VBind (gensym) (VEmptyT)) (Type l-y l^)))]
          [(t^) (check/expr tenv venv t (VEmptyT))])
         (values (IndEmpty l^ m^ t^) (eval/expr venv (App m^ t^))))]
-    [(UnitT) (values e (VType 0 (VLZero)))]
     [(UnitLit) (values e (VUnitT))]
     [(EqT A from to)
       (let*-values
@@ -444,18 +436,11 @@
          [(from^) (check/expr tenv venv from A-v)]
          [(to^) (check/expr tenv venv to A-v)])
         (values (EqT A^ from^ to^) (VType A-y A-x)))]
-    [(Refl x)
+    [(IndEq l to t m refl)
       (let*-values
-        ([(x^ x-t) (synth/expr tenv venv x)]
-         [(x-v) (eval/expr venv x^)])
-        (values (Refl x^) (VEqT x-t x-v x-v)))]
-    [(IndEq l A from to m t refl)
-      (let*-values
-        ([(l^) (check/expr tenv venv l (VLevel 0))]
-         [(A^ A-y A-x) (synth/expr-type tenv venv A)]
-         [(A-v) (eval/expr venv A^)]
-         [(from^) (check/expr tenv venv from A-v)]
-         [(to^) (check/expr tenv venv to A-v)]
+        ([(l^ l-y) (synth/expr-level tenv venv l)]
+         [(to^ A-v) (synth/expr tenv venv to)]
+         [(t^ from-v) (synth/expr-eq tenv venv t (eval/expr venv to^) A-v)]
          [(m-x) (gensym)]
          [(m^)
            (check/expr
@@ -464,21 +449,42 @@
              m
              (VPi venv (VBind m-x A-v)
                (Pi (TypedBind (gensym)
-                 (EqT A^ from^ (Var m-x))) (Type 0 l^))))]
-         [(from-v) (eval/expr venv from^)]
-         [(to-v) (eval/expr venv to^)]
-         [(t^) (check/expr tenv venv t (VEqT A-v from-v to-v))]
+                 (EqT (quote/value A-v) (quote/value from-v) (Var m-x))) (Type 0 l^))))]
          [(m-v) (eval/expr venv m^)]
          [(refl^)
            (check/expr
              tenv
              venv
              refl
-             (do-app (do-app m-v from-v) (VRefl from-v)))]
+             (do-app (do-app m-v from-v) (VRefl)))]
+         [(to-v) (eval/expr venv to^)]
          [(t-v) (eval/expr venv t^)])
         (values
-          (IndEq l^ A^ from^ to^ m^ t^ refl^)
-          (do-app (do-app m-v to-v) t-v)))]))
+          (IndEq l^ to^ t^ m^ refl^)
+          (do-app (do-app m-v to-v) t-v)))]
+    [else (error 'synth/expr "Cannot synthesize type for ~a" (unparse/expr e))]))
+
+(: synth/expr-eq (-> TEnv VEnv AstExpr Value Value (values TypedExpr Value)))
+(define (synth/expr-eq tenv venv t to-v A-v)
+  (define-values (t^ t-t) (synth/expr tenv venv t))
+  (match t-t
+    [(VEqT A-v^ from-v to-v^)
+      (cond
+        [(not (value=? A-v^ A-v))
+          (error 'synth/expr-eq
+            "Expected equality to be at type ~a, but is at type ~a"
+            (unparse/expr (quote/value A-v))
+            (unparse/expr (quote/value A-v^)))]
+        [(not (value=? to-v to-v^))
+          (error 'synth/expr-eq
+            "Expected right-hand side of equality to be ~a, but is ~a"
+            (unparse/expr (quote/value to-v))
+            (unparse/expr (quote/value to-v^)))]
+        [else (values t^ from-v)])]
+    [else
+      (error 'synth/expr-eq "Expected ~a to be an equality, but is of type ~a"
+        (unparse/expr t)
+        (unparse/expr (quote/value t-t)))]))
 
 (: synth/expr-type (-> TEnv VEnv AstExpr (values TypedExpr Natural Value)))
 (define (synth/expr-type tenv venv t)
@@ -486,11 +492,19 @@
   (match t-t
     [(VType y x) (values t^ y x)]
     [else
-      (error
-        'synth/expr-type
-        "Expected ~a to be a type, but is a ~a"
+      (error 'synth/expr-type "Expected ~a to be a type, but is a ~a"
         (unparse/expr t)
         (unparse/expr (quote/value t-t)))]))
+
+(: synth/expr-level (-> TEnv VEnv AstExpr (values TypedExpr Natural)))
+(define (synth/expr-level tenv venv l)
+  (define-values (l^ l-t) (synth/expr tenv venv l))
+  (match l-t
+    [(VLevel y) (values l^ y)]
+    [else
+      (error 'synth/expr-type "Expected ~a to be a level, but is a ~a"
+        (unparse/expr l)
+        (unparse/expr (quote/value l-t)))]))
 
 (: synth/bind (-> TEnv VEnv AstBind (values TBind Value Natural Value)))
 (define (synth/bind tenv venv b)
@@ -521,13 +535,6 @@
         "Expected expression of type ~a, but found ~a"
         (unparse/expr (quote/value t))
         (unparse/expr e))]
-    [(cons (Let x v b) _)
-      (let*-values
-        ([(x^ v^ v-t) (check/bind-expr tenv venv x v)]
-         [(b-tenv) (env-set tenv x^ v-t)]
-         [(b-venv) (env-set tenv x^ (eval/expr venv v^))]
-         [(b^) (check/expr b-tenv b-venv b t)])
-        (Let x^ v^ b^))]
     [(cons (LZero) (VLevel _)) (LZero)]
     [(cons (LSucc l) (VLevel _))
       (let*-values
@@ -538,6 +545,21 @@
         ([(l^) (check/expr tenv venv l t)]
          [(r^) (check/expr tenv venv r t)])
         (LMax l^ r^))]
+    [(cons (Refl) (VEqT A a b))
+      (if (value=? a b)
+        (Refl)
+        (error 'check/expr "Expected ~a and ~a to be the same ~a"
+          (unparse/expr (quote/value a))
+          (unparse/expr (quote/value b))
+          (unparse/expr (quote/value A))))]
+    [(cons (EmptyT) (VType _ _)) (EmptyT)]
+    [(cons (UnitT) (VType _ _)) (UnitT)]
+    [(cons (Level l-y) (VType t-y _))
+      (if (= (add1 l-y) t-y)
+        (Level l-y)
+        (error 'check/expr "Expected ~a to be at level ~a"
+          (unparse/expr e)
+          (sub1 t-y)))]
     [else
       (define-values (e^ t^) (synth/expr tenv venv e))
       (if (not (value=? t t^))
@@ -582,10 +604,10 @@
 (define (unparse/expr e)
   (match e
     [(Var n) n]
+    [(Ann v t) `(,(unparse/expr v) : ,(unparse/expr t))]
     [(Lam x b) `(λ ,(unparse/bind x) ,(unparse/expr b))]
     [(App f a) (unparse/app e)]
     [(Pi x b) `(-> ,(unparse/bind x) ,(unparse/expr b))]
-    [(Let x v b) `(let ,(unparse/bind x) ,(unparse/expr v) ,(unparse/expr b))]
     [(Type y x) `(Type ,y ,(unparse/expr x))]
     [(Level y) `(Level ,y)]
     [(LZero) `lzero]
@@ -596,11 +618,10 @@
     [(UnitT) 'Unit]
     [(UnitLit) '()]
     [(EqT A from to) `(= ,(unparse/expr A) ,(unparse/expr from) ,(unparse/expr to))]
-    [(Refl x) `(Refl ,(unparse/expr x))]
-    [(IndEq l A from to m t refl)
-      `(ind-= ,(unparse/expr l) ,(unparse/expr A) ,(unparse/expr from)
-        ,(unparse/expr to) ,(unparse/expr m) ,(unparse/expr t)
-        ,(unparse/expr refl))]))
+    [(Refl) `Refl]
+    [(IndEq l to t m refl)
+      `(ind-= ,(unparse/expr l) ,(unparse/expr to) ,(unparse/expr t)
+        ,(unparse/expr m) ,(unparse/expr refl))]))
 
 (: unparse/app (-> AstExpr (Listof Any)))
 (define (unparse/app e)

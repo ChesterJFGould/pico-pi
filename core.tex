@@ -6,37 +6,277 @@
 \begin{document}
 
 \newcommand{\spc}[0]{\hspace{0.3em}}
-\newcommand{\lam}[2]{(\lambda #1 \spc #2)}
+\newcommand{\pipe}[0]{\spc | \spc}
+
+\newcommand{\ann}[2]{(#1 \spc : \spc #2)}
+\newcommand{\lam}[2]{(\lambda \spc #1 \spc #2)}
 \newcommand{\app}[2]{(#1 \spc #2)}
 \newcommand{\arr}[2]{(\to #1 \spc #2)}
-\newcommand{\elet}[3]{(\text{let} \spc #1 \spc #2 \spc #3)}
 \newcommand{\Type}[2]{(\text{Type} \spc #1 \spc #2)}
 \newcommand{\Level}[1]{(\text{Level} \spc #1)}
-\newcommand{\lzero}[0]{(\text{lzero})}
+\newcommand{\lzero}[0]{\text{lzero}}
 \newcommand{\lsucc}[1]{(\text{lsucc} \spc #1)}
+\newcommand{\lmax}[2]{(\text{lmax} \spc #1 \spc #2)}
+\newcommand{\Empty}[0]{\text{Empty}}
+\newcommand{\IndEmpty}[3]{(\text{ind-Empty} \spc #1 \spc #2 \spc #3)}
+\newcommand{\UnitT}[0]{\text{Unit}}
+\newcommand{\Unit}[0]{()}
+\newcommand{\Eq}[3]{(\text{=} \spc #1 \spc #2 \spc #3)}
+\newcommand{\Refl}[0]{\text{refl}}
+\newcommand{\IndEq}[5]{(\text{ind-=} \spc #1 \spc #2 \spc #3 \spc #4 \spc #5)}
+\newcommand{\W}[2]{(\text{W} \spc #1 \spc #2)}
+\newcommand{\w}[2]{(\text{w} \spc #1 \spc #2)}
+\newcommand{\IndW}[4]{(\text{ind-W} \spc #1 \spc #2 \spc #3 \spc #4)}
+
+\newcommand{\synthR}[3]{#1 \vdash #2 \Rightarrow #3}
+\newcommand{\checkR}[3]{#1 \vdash #2 \Leftarrow #3}
+\newcommand{\subst}[3]{#1 [#2/#3]}
+\newcommand{\tmax}[4]{\text{tmax}(#1, #2, #3, #4)}
 
 \section{Syntax}
 
 $e ::=$
 
-$| x$
+$\pipe x \pipe \ann{e}{e}$
 
-$| \lam{b}{e} | \app{e}{e} | \arr{t}{e}$
+$\pipe \lam{b}{e} \pipe \app{e}{e} \pipe \arr{t}{e}$
 
-$| \elet{b}{e}{e}$
+$\pipe \Type{n}{e} \pipe \Level{n} \pipe \lzero \pipe \lsucc{e} \pipe \lmax{e}{e}$
 
-$| \Type{n}{e} | \Level{n} | \lzero | \lsucc{e}$
+$\pipe \Empty \pipe \IndEmpty{e}{e}{e}$
+
+$\pipe \UnitT \pipe \Unit$
+
+$\pipe \Eq{e}{e}{e} \pipe \Refl \pipe \IndEq{e}{e}{e}{e}{e}$
+
+$\pipe \W{t}{e} \pipe \w{e}{e} \pipe \IndW{e}{e}{e}{e}$
 \\\\
-$b ::=$
-
-$| x$
-
-$| [x : e]$
+$b ::= x \pipe t$
 \\\\
-$t ::=$
+$t ::= [x : e]$
 
-$| [x : e]$
+\section{Typing}
 
-$| e$
+\fbox{$\synthR{\Gamma}{e}{A}$}
+meaning $e$ synthesizes type $A$ under environment $\Gamma$
+\\
+\fbox{$\checkR{\Gamma}{e}{A}$}
+meaning $e$ checks against type $A$ under environment $\Gamma$
+
+\subsection{Misc}
+\begin{mathpar}
+\inferrule*[right=Var]
+{x : A \in \Gamma}
+{\synthR{\Gamma}{x}{A}}
+\and
+\inferrule*[right=Ann]
+{
+\synthR{\Gamma}{A}{\Type{n}{l}}
+\and
+\checkR{\Gamma}{e}{A}
+}
+{\synthR{\Gamma}{\ann{e}{A}}{A}}
+\and
+\inferrule*[right=CheckSynth]
+{\synthR{\Gamma}{e}{A}}
+{\checkR{\Gamma}{e}{A}}
+\end{mathpar}
+
+\subsection{Functions}
+
+\begin{mathpar}
+\inferrule*[right=$\lambda$-I-Check]
+{
+\checkR{\Gamma}{b}{A}
+\and
+\checkR{\Gamma, b_x : A}{e}{\subst{B}{b_x}{x}}
+}
+{\checkR{\Gamma}{\lam{b}{e}}{\arr{[x : A]}{B}}}
+\and
+\inferrule*[right=$\lambda$-I-Synth]
+{
+\synthR{\Gamma}{b}{A}
+\and
+\synthR{\Gamma, b_x : A}{e}{B}
+}
+{\synthR{\Gamma}{\lam{b}{e}}{\arr{[b_x : A]}{B}}}
+\and
+\inferrule*[right=$\lambda$-E]
+{
+  \synthR{\Gamma}{f}{\arr{[x : A]}{B}}
+  \and
+  \checkR{\Gamma}{a}{A}
+}
+{\synthR{\Gamma}{\app{f}{a}}{\subst{B}{a}{x}}}
+\and
+\inferrule*[right=$\to$-I]
+{
+\synthR{\Gamma}{A}{\Type{n_A}{l_B}}
+\and
+\synthR{\Gamma, x : A}{B}{\Type{n_B}{l_B}}
+}
+{\synthR{\Gamma}{\arr{[x : A]}{B}}{\tmax{n_A}{n_B}{l_A}{l_B}}}
+\end{mathpar}
+
+\subsection{Universes}
+
+\begin{mathpar}
+\inferrule*[right=Type]
+{\checkR{\Gamma}{l}{\Level{n}}}
+{\synthR{\Gamma}{\Type{n}{l}}{\Type{n}{\lsucc{l}}}}
+\end{mathpar}
+\begin{mathpar}
+\inferrule*[right=Level]
+{ }
+{\checkR{\Gamma}{\Level{n}}{\Type{(n+1)}{l}}}
+\and
+\inferrule*[right=lzero]
+{ }
+{\checkR{\Gamma}{\lzero}{\Level{n}}}
+\and
+\inferrule*[right=lsucc]
+{\checkR{\Gamma}{l}{\Level{n}}}
+{\checkR{\Gamma}{\lsucc{l}}{\Level{n}}}
+\and
+\inferrule*[right=lmax]
+{
+\checkR{\Gamma}{l_A}{\Level{n}}
+\and
+\checkR{\Gamma}{l_B}{\Level{n}}
+}
+{\checkR{\Gamma}{\lmax{l_A}{l_B}}{\Level{n}}}
+\end{mathpar}
+
+\subsection{Base Types}
+
+\begin{mathpar}
+\inferrule*[right=Empty]
+{ }
+{\checkR{\Gamma}{\Empty}{\Type{n}{l}}}
+\and
+\inferrule*[right=Empty-E]
+{
+\synthR{\Gamma}{l}{\Level{n}}
+\and
+\checkR{\Gamma}{t}{\Empty}
+\\
+\checkR{\Gamma}{m}{\arr{[t : \Empty]}{\Type{n}{l}}}
+}
+{\synthR{\Gamma}{\IndEmpty{l}{t}{m}}{\app{m}{t}}}
+\and
+\inferrule*[right=Unit]
+{ }
+{\checkR{\Gamma}{\UnitT}{\Type{n}{l}}}
+\and
+\inferrule*[right=Unit-I]
+{ }
+{\synthR{\Gamma}{\Unit}{\UnitT}}
+\end{mathpar}
+
+\subsection{Propositional Equality}
+
+\begin{mathpar}
+\inferrule*[right=Eq]
+{
+\synthR{\Gamma}{A}{\Type{n}{l}}
+\and
+\checkR{\Gamma}{a}{A}
+\and
+\checkR{\Gamma}{b}{A}
+}
+{\synthR{\Gamma}{\Eq{A}{a}{b}}{\Type{n}{l}}}
+\and
+\inferrule*[right=Eq-I]
+{ }
+{\checkR{\Gamma}{\Refl}{\Eq{A}{a}{a}}}
+\and
+\inferrule*[right=Eq-E]
+{
+\synthR{\Gamma}{l}{\Level{n}}
+\and
+\synthR{\Gamma}{b}{A}
+\and
+\synthR{\Gamma}{t}{\Eq{A}{a}{b}}
+\\
+\synthR{\Gamma}{m}{\arr{[b : A]}{\arr{[t : \Eq{A}{a}{b}]}{\Type{n}{l}}}}
+}
+{\synthR{\Gamma}{\IndEq{l}{b}{t}{m}{r}}{\app{\app{m}{b}}{t}}}
+\end{mathpar}
+
+\subsection{Inductive Data}
+
+\begin{mathpar}
+\inferrule*[right=W]
+{
+\synthR{\Gamma}{T}{\Type{n_T}{l_T}}
+\and
+\synthR{\Gamma, x : T}{B}{\Type{n_B}{l_B}}
+}
+{\synthR{\Gamma}{\W{[x : T]}{B}}{\tmax{n_T}{n_B}{l_T}{l_B}}}
+\and
+\inferrule*[right=W-I]
+{
+\checkR{\Gamma}{t}{T}
+\and
+\checkR{\Gamma}{d}{\arr{[\_ : \subst{B}{t}{x}]}{\W{[x : T]}{B}}}
+}
+{\checkR{\Gamma}{\w{t}{d}}{\W{[x : T]}{B}}}
+\and
+\infer*[right=W-E]
+{
+\synthR{\Gamma}{l}{\Level{n}}
+\and
+\synthR{\Gamma}{t}{\W{[x : T]}{B}}
+\\
+\checkR{\Gamma}{m}{\arr{[t : \W{[x : T]}{B}]}{\Type{n}{l}}}
+\\\\
+\checkR
+{\Gamma}
+{e}
+\\\\
+{\arr
+  {[t : T]}
+  {\arr
+    {[d : \arr{[\_ : \subst{B}{t}{x}]}{\W{[x : T]}{B}}}
+    {\arr
+      {[i : \arr{[t : \subst{B}{t}{x}]}{\app{m}{\app{d}{t}}}]}
+      {\app{m}{\w{t}{d}}}}}}
+}
+{\synthR{\Gamma}{\IndW{l}{t}{m}{e}}{\app{m}{t}}}
+\end{mathpar}
+
+\subsection{Bindings}
+
+\fbox{$\synthR{\Gamma}{b}{A}$}
+meaning $b$ synthesizes type $A$ under environment $\Gamma$
+\\
+\fbox{$\checkR{\Gamma}{b}{A}$}
+meaning $b$ checks against type $A$ under environment $\Gamma$
+
+\begin{mathpar}
+\inferrule*[right=CheckUntyped]
+{\synthR{\Gamma}{A}{\Type{n}{l}}}
+{\checkR{\Gamma}{x}{A}}
+\and
+\inferrule*[right=CheckTyped]
+{\synthR{\Gamma}{A}{\Type{n}{l}}}
+{\checkR{\Gamma}{[x : A]}{A}}
+\and
+\inferrule*[right=SynthTyped]
+{\synthR{\Gamma}{A}{\Type{n}{l}}}
+{\synthR{\Gamma}{[x : A]}{A}}
+\end{mathpar}
+\\
+\subsection{Type Maximum}
+
+\fbox{$tmax(n_A, n_B, l_A, l_B)$} calculates a type representing the maximum of the two other types
+
+\begin{align*}
+tmax(n_A, n_B, l_A, l_B) &= \Type{n_A}{\lmax{l_A}{l_B}} \text{ if } n_A = n_B
+\\
+tmax(n_A, n_B, l_A, l_B) &= \Type{n_A}{l_A} \text{ if } n_A > n_B
+\\
+tmax(n_A, n_B, l_A, l_B) &= \Type{n_B}{l_B} \text{ if } n_A < n_B
+\end{align*}
 
 \end{document}

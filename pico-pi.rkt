@@ -31,15 +31,17 @@
     (define input (read))
     (unless (eof-object? input)
       (define r (parse/repl input))
-      (match r
-        [(Def var val)
-          (define-values (var^ val^ type) (check/bind-expr tenv venv var val))
-          (pretty-display (unparse/bind var^))
-          (pretty-display (unparse/expr (quote/value (eval/expr venv val^))))
-          (define tenv^ (env-set tenv var^ type))
-          (define venv^ (env-set venv var^ (eval/expr venv val^)))
-          (repl-env tenv^ venv^)]
-        [(RExpr e)
-          (define-values (e^ e-t) (synth/expr tenv venv e))
-          (pretty-display `(,(unparse/expr (quote/value (eval/expr venv e^))) : ,(unparse/expr (quote/value e-t))))
-          (repl-env tenv venv)]))))
+      (with-handlers
+        ([exn:fail? (λ ([e : exn]) (displayln (exn-message e)) (repl-env tenv venv))])
+        (match r
+          [(Def var val)
+            (define-values (var^ val^ type) (check/bind-expr tenv venv var val))
+            (pretty-display (unparse/bind var^))
+            (pretty-display (unparse/expr (quote/value (eval/expr venv val^))))
+            (define tenv^ (env-set tenv var^ type))
+            (define venv^ (env-set venv var^ (eval/expr venv val^)))
+            (repl-env tenv^ venv^)]
+          [(RExpr e)
+            (define-values (e^ e-t) (synth/expr tenv venv e))
+            (pretty-display `(,(unparse/expr (quote/value (eval/expr venv e^))) : ,(unparse/expr (quote/value e-t))))
+            (repl-env tenv venv)])))))
