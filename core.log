@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2021/VoidLinux) (preloaded format=pdflatex 2023.12.12)  13 DEC 2023 20:25
+This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2021/VoidLinux) (preloaded format=pdflatex 2023.12.12)  14 DEC 2023 00:14
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -130,7 +130,7 @@ Underfull \hbox (badness 10000) in paragraph at lines 52--57
 [1
 
 {/usr/share/texmf-var/fonts/map/pdftex/updmap/pdftex.map}]
-Overfull \hbox (98.12717pt too wide) in paragraph at lines 209--246
+Overfull \hbox (100.90494pt too wide) in paragraph at lines 209--246
  []$ 
  []
 
@@ -155,7 +155,7 @@ fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/share/texmf-dist/fonts/type1/pub
 lic/amsfonts/cm/cmmi9.pfb></usr/share/texmf-dist/fonts/type1/public/amsfonts/cm
 /cmr10.pfb></usr/share/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></u
 sr/share/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb>
-Output written on core.pdf (3 pages, 92698 bytes).
+Output written on core.pdf (3 pages, 92685 bytes).
 PDF statistics:
  46 PDF objects out of 1000 (max. 8388607)
  32 compressed objects within 1 object stream

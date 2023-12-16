@@ -5,7 +5,8 @@
 ; Expr functor parameterized by bind type
 (define-type (Expr b r)
   (U Var (Ann r) (Lam b r) (App r) (Pi r) (Type r) Level LZero (LSucc r)
-    (LMax r) EmptyT (IndEmpty r) UnitT UnitLit (EqT r) Refl (IndEq r)))
+    (LMax r) EmptyT (IndEmpty r) UnitT UnitLit (EqT r) Refl (IndEq r)
+    (W r) (w r) (IndW r)))
 
 (struct Var ([name : Symbol]) #:transparent)
 
@@ -43,6 +44,12 @@
   ([l : r] [to : r] [t : r] [m : r] [refl : r])
   #:transparent)
 
+(struct (r) W ([tag : (TypedBind r)] [arity : r]) #:transparent)
+
+(struct (r) w ([tag : r] [data : r]) #:transparent)
+
+(struct (r) IndW ([l : r] [t : r] [m : r] [e : r]) #:transparent)
+
 (struct (r) TypedBind ([name : Symbol] [type : r]) #:transparent)
 
 (struct UntypedBind ([name : Symbol]) #:transparent)
@@ -65,7 +72,8 @@
 ; Values
 
 (define-type Value
-  (U VNeu VLam VPi VType VLevel VLZero VLSucc VEmptyT VUnitT VUnit VEqT VRefl))
+  (U VNeu VLam VPi VType VLevel VLZero VLSucc VEmptyT VUnitT VUnit VEqT VRefl
+    VW Vw))
 
 (struct VNeu ([neu : Neutral] [type : Value]) #:transparent)
 
@@ -93,8 +101,12 @@
 
 (struct VBind ([name : Symbol] [type : Value]) #:transparent)
 
+(struct VW ([env : VEnv] [tag : VBind] [body : TypedExpr]) #:transparent)
+
+(struct Vw ([tag : Value] [data : Value]) #:transparent)
+
 (define-type Neutral
-  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq))
+  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW))
 
 (struct NVar ([name : Symbol]) #:transparent)
 
@@ -108,6 +120,10 @@
 
 (struct NIndEq
   ([l : Value] [to : Value] [t : Neutral] [m : Value] [refl : Value])
+  #:transparent)
+
+(struct NIndW
+  ([l : Value] [t : Neutral] [m : Value] [e : Value])
   #:transparent)
 
 ; Env
@@ -142,6 +158,10 @@
     [`(ind-= ,l ,to ,t ,m ,refl)
       (IndEq (parse/expr l) (parse/expr to) (parse/expr t) (parse/expr m)
         (parse/expr refl))]
+    [`(W ,t ,B) (W (parse/typed-bind t) (parse/expr B))]
+    [`(w ,t ,d) (w (parse/expr t) (parse/expr d))]
+    [`(ind-W ,l ,t ,m ,e)
+      (IndW (parse/expr l) (parse/expr t) (parse/expr m) (parse/expr e))]
     [`(,f ,a ...)
       (foldl
         (λ ([a : AstExpr] [f : AstExpr]) (App f a))
@@ -151,7 +171,11 @@
 
 (: variable? (-> Symbol Boolean))
 (define (variable? v)
-  (not (member v '(λ lam Π Pi -> : let Empty ind-Empty Unit lzero lsucc lmax Level Type))))
+  (not
+    (member
+      v
+      '(λ lam Π Pi -> : let Empty ind-Empty Unit lzero lsucc lmax Level Type
+        W w ind-W = ind-= Refl))))
 
 (: parse/variable (-> Symbol Var))
 (define (parse/variable v)
@@ -196,7 +220,12 @@
     [(Refl) (VRefl)]
     [(IndEq l to t m refl)
       (do-ind-eq (eval/expr env l) (eval/expr env to) (eval/expr env t)
-        (eval/expr env m) (eval/expr env refl))]))
+        (eval/expr env m) (eval/expr env refl))]
+    [(W t a) (VW env (eval/bind env t) a)]
+    [(w t d) (Vw (eval/expr env t) (eval/expr env d))]
+    [(IndW l t m e)
+      (do-ind-w env (eval/expr env l) (eval/expr env t) (eval/expr env m)
+        (eval/expr env e))]))
 
 (: eval/bind (-> VEnv TBind VBind))
 (define (eval/bind env b)
@@ -231,7 +260,15 @@
     [(VUnitT) (UnitT)]
     [(VUnit) (UnitLit)]
     [(VEqT A from to) (EqT (quote/value A) (quote/value from) (quote/value to))]
-    [(VRefl) (Refl)]))
+    [(VRefl) (Refl)]
+    [(VW env t a)
+      (define t^ (refresh t))
+      (W (quote/bind t^)
+        (quote/value
+          (eval/expr
+            (env-set env t (VNeu (NVar (VBind-name t^)) (VBind-type t^)))
+            a)))]
+    [(Vw t d) (w (quote/value t) (quote/value d))]))
 
 (: quote/neutral (-> Neutral TypedExpr))
 (define (quote/neutral n)
@@ -243,7 +280,10 @@
     [(NLMaxR l r) (LMax (quote/value l) (quote/neutral r))]
     [(NIndEq l to t m refl)
       (IndEq (quote/value l) (quote/value to) (quote/neutral t) (quote/value m)
-        (quote/value refl))]))
+        (quote/value refl))]
+    [(NIndW l t m e)
+      (IndW (quote/value l) (quote/neutral t) (quote/value m)
+        (quote/value e))]))
 
 (: quote/bind (-> VBind TBind))
 (define (quote/bind b)
@@ -270,6 +310,21 @@
     [(VRefl) refl]
     [(VNeu n (VEqT _ _ _))
       (VNeu (NIndEq l to n m refl) (do-app (do-app m to) t))]))
+
+(: do-ind-w (-> VEnv Value Value Value Value Value))
+(define (do-ind-w env l t m e)
+  (match t
+    [(Vw tag data)
+      (define t (gensym 't))
+      (define t-t
+        (match data
+          [(VLam _ (VBind _ t-t) _) t-t]
+          [(VNeu _ (VPi _ (VBind _ t-t) _)) t-t]))
+      (do-app (do-app (do-app e tag) data)
+        (VLam env (VBind t t-t)
+          (IndW (quote/value l) (App (quote/value data) (Var t)) (quote/value m)
+            (quote/value e))))]
+    [(VNeu n (VW _ _ _)) (VNeu (NIndW l n m e) (do-app m t))]))
 
 (: do-lmax (-> Value Value Value))
 (define (do-lmax l r)
@@ -343,6 +398,15 @@
     [(cons (VEqT A-a from-a to-a) (VEqT A-b from-b to-b))
       (and (value=? A-a A-b) (value=? from-a from-b) (value=? to-a to-b))]
     [(cons (VRefl) (VRefl)) #t]
+    [(cons (VW env-a t-a a-a) (VW env-b t-b a-b))
+      (define var^ (VNeu (NVar (gensym)) (VBind-type t-a)))
+      (and
+        (value=? (VBind-type t-a) (VBind-type t-b))
+        (value=?
+          (eval/expr (env-set env-a t-a var^) a-a)
+          (eval/expr (env-set env-b t-b var^) a-b)))]
+    [(cons (Vw t-a d-a) (Vw t-b d-b))
+      (and (value=? t-a t-b) (value=? d-a d-b))]
     [_ #f]))
 
 (: neutral=? (-> Neutral Neutral Boolean))
@@ -365,6 +429,12 @@
         (neutral=? t-a t-b)
         (value=? m-a m-b)
         (value=? refl-a refl-b))]
+    [(cons (NIndW l-a t-a m-a e-a) (NIndW l-b t-b m-b e-b))
+      (and
+        (value=? l-a l-b)
+        (neutral=? t-a t-b)
+        (value=? m-a m-b)
+        (value=? e-a e-b))]
     [_ #f]))
 
 ; Bidirectional Type Checking
@@ -404,14 +474,8 @@
         ([(x^ x-t x-t-y x-t-x) (synth/bind tenv venv x)]
          [(b-tenv) (env-set tenv x^ x-t)]
          [(b-venv) (env-set-neu venv x^ x-t)]
-         [(b^ b-y b-x) (synth/expr-type b-tenv b-venv b)]
-         [(t-y) (max x-t-y b-y)]
-         [(t-x)
-           (cond
-             [(= x-t-y b-y) (do-lmax x-t-x b-x)]
-             [(> x-t-y b-y) x-t-x]
-             [else b-x])])
-        (values (Pi x^ b^) (VType t-y t-x)))]
+         [(b^ b-y b-x) (synth/expr-type b-tenv b-venv b)])
+        (values (Pi x^ b^) (tmax x-t-y b-y x-t-x b-x)))]
     [(Type y x)
       (let*-values
         ([(x^) (check/expr tenv venv x (VLevel y))]
@@ -462,7 +526,57 @@
         (values
           (IndEq l^ to^ t^ m^ refl^)
           (do-app (do-app m-v to-v) t-v)))]
+    [(W t a)
+      (let*-values
+        ([(t^ t-t t-t-y t-t-x) (synth/bind tenv venv t)]
+         [(a-tenv) (env-set tenv t^ t-t)]
+         [(a-venv) (env-set-neu venv t^ t-t)]
+         [(a^ a-y a-x) (synth/expr-type a-tenv a-venv a)])
+        (values (W t^ a^) (tmax t-t-y a-y t-t-x a-x)))]
+    [(IndW l t m e)
+      (let*-values
+        ([(l^ l-y) (synth/expr-level tenv venv l)]
+         [(t^ t-t arity-env tag arity) (synth/expr-w tenv venv t)]
+         [(m^)
+           (check/expr tenv venv m
+             (VPi venv (VBind (gensym) t-t) (Type l-y l^)))]
+         [(tag-x) (VBind-name tag)]
+         [(tag-t) (VBind-type tag)]
+         [(e-t) (gensym 't)]
+         [(e-d) (gensym 'd)]
+         [(e-i) (gensym 'i)]
+         [(e-B)
+           (quote/value
+             (eval/expr (env-set venv tag (VNeu (NVar e-t) tag-t)) arity))]
+         [(e^)
+           (check/expr tenv venv e
+             (VPi venv (VBind e-t tag-t)
+               (Pi
+                 (TypedBind e-d (Pi (TypedBind (gensym) e-B) (quote/value t-t)))
+                 (Pi (TypedBind e-i (Pi (TypedBind e-t e-B) (App m^ (App (Var e-d) (Var e-t)))))
+                   (App m^ (w (Var e-t) (Var e-d)))))))]
+         [(m-v) (eval/expr venv m^)]
+         [(t-v) (eval/expr venv t^)])
+        (values (IndW l^ t^ m^ e^) (do-app m-v t-v)))]
     [else (error 'synth/expr "Cannot synthesize type for ~a" (unparse/expr e))]))
+
+(: tmax (-> Natural Natural Value Value Value))
+(define (tmax a-y b-y a-x b-x)
+  (cond
+    [(= a-y b-y) (VType a-y (do-lmax a-x b-x))]
+    [(> a-y b-y) (VType a-y a-x)]
+    [else (VType b-y b-x)]))
+
+(: synth/expr-w
+  (-> TEnv VEnv AstExpr (values TypedExpr Value VEnv VBind TypedExpr)))
+(define (synth/expr-w tenv venv w)
+  (define-values (w^ w-t) (synth/expr tenv venv w))
+  (match w-t
+    [(VW env t a) (values w^ w-t env t a)]
+    [else
+      (error 'synth/expr-w "Expected ~a to be a W type, but is a ~a"
+        (unparse/expr w)
+        (unparse/expr (quote/value w-t)))]))
 
 (: synth/expr-eq (-> TEnv VEnv AstExpr Value Value (values TypedExpr Value)))
 (define (synth/expr-eq tenv venv t to-v A-v)
@@ -560,6 +674,14 @@
         (error 'check/expr "Expected ~a to be at level ~a"
           (unparse/expr e)
           (sub1 t-y)))]
+    [(cons (w tag-e d) (VW arity-env tag arity))
+      (let*-values
+        ([(tag-e^) (check/expr tenv venv tag-e (VBind-type tag))]
+         [(tag-e-v) (eval/expr venv tag-e^)]
+         [(d^)
+           (check/expr tenv venv d
+             (VPi arity-env (VBind (gensym) (eval/expr (env-set arity-env tag tag-e-v) arity)) (quote/value t)))])
+        (w tag-e^ d^))]
     [else
       (define-values (e^ t^) (synth/expr tenv venv e))
       (if (not (value=? t t^))
@@ -621,7 +743,12 @@
     [(Refl) `Refl]
     [(IndEq l to t m refl)
       `(ind-= ,(unparse/expr l) ,(unparse/expr to) ,(unparse/expr t)
-        ,(unparse/expr m) ,(unparse/expr refl))]))
+        ,(unparse/expr m) ,(unparse/expr refl))]
+    [(W t a) `(W ,(unparse/bind t) ,(unparse/expr a))]
+    [(w t d) `(w ,(unparse/expr t) ,(unparse/expr d))]
+    [(IndW l t m e)
+      `(ind-W ,(unparse/expr l) ,(unparse/expr t) ,(unparse/expr m)
+        ,(unparse/expr e))]))
 
 (: unparse/app (-> AstExpr (Listof Any)))
 (define (unparse/app e)
