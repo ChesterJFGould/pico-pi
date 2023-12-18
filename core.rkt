@@ -331,14 +331,14 @@
   (match (cons l r)
     [(cons (VNeu n t) r) (VNeu (NLMaxL n r) t)]
     [(cons l (VNeu n t)) (VNeu (NLMaxR l n) t)]
-    [(cons l r) (add-levels l r)]))
+    [(cons l r) (max-levels l r)]))
 
-(: add-levels (-> Value Value Value))
-(define (add-levels l r)
+(: max-levels (-> Value Value Value))
+(define (max-levels l r)
   (match (cons l r)
     [(cons (VLZero) r) r]
     [(cons l (VLZero)) l]
-    [(cons (VLSucc l) r) (add-levels l (VLSucc r))]))
+    [(cons (VLSucc l) (VLSucc r)) (VLSucc (max-levels l r))]))
 
 ; Env
 
