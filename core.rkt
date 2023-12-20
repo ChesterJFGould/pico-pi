@@ -6,7 +6,7 @@
 (define-type (Expr b r)
   (U Var (Ann r) (Lam b r) (App r) (Pi r) (Type r) Level LZero (LSucc r)
     (LMax r) EmptyT (IndEmpty r) UnitT UnitLit (EqT r) Refl (IndEq r)
-    (W r) (w r) (IndW r)))
+    (W r) (w r) (IndW r) BoolT Bool (IndBool r)))
 
 (struct Var ([name : Symbol]) #:transparent)
 
@@ -50,6 +50,13 @@
 
 (struct (r) IndW ([l : r] [t : r] [m : r] [e : r]) #:transparent)
 
+(struct BoolT () #:transparent)
+
+(struct Bool ([val : Boolean]) #:transparent)
+
+(struct (r) IndBool
+  ([l : r] [t : r] [m : r] [true : r] [false : r]) #:transparent)
+
 (struct (r) TypedBind ([name : Symbol] [type : r]) #:transparent)
 
 (struct UntypedBind ([name : Symbol]) #:transparent)
@@ -73,7 +80,7 @@
 
 (define-type Value
   (U VNeu VLam VPi VType VLevel VLZero VLSucc VEmptyT VUnitT VUnit VEqT VRefl
-    VW Vw))
+    VW Vw VBoolT VBool))
 
 (struct VNeu ([neu : Neutral] [type : Value]) #:transparent)
 
@@ -105,8 +112,12 @@
 
 (struct Vw ([tag : Value] [data : Value]) #:transparent)
 
+(struct VBoolT () #:transparent)
+
+(struct VBool ([val : Boolean]) #:transparent)
+
 (define-type Neutral
-  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW))
+  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW NIndBool))
 
 (struct NVar ([name : Symbol]) #:transparent)
 
@@ -126,6 +137,10 @@
   ([l : Value] [t : Neutral] [m : Value] [e : Value])
   #:transparent)
 
+(struct NIndBool
+  ([l : Value] [t : Neutral] [m : Value] [true : Value] [false : Value])
+  #:transparent)
+
 ; Env
 
 (define-type Env (HashTable Symbol Value))
@@ -143,6 +158,9 @@
     ['Empty (EmptyT)]
     [`lzero (LZero)]
     [`Refl (Refl)]
+    [`Bool (BoolT)]
+    [`true (Bool #t)]
+    [`false (Bool #f)]
     [(? symbol?) (parse/variable e)]
     [`(,e : ,t) (Ann (parse/expr e) (parse/expr t))]
     [`(,(or 'λ 'lam) ,v ,b) (Lam (parse/bind v) (parse/expr b))]
@@ -162,6 +180,9 @@
     [`(w ,t ,d) (w (parse/expr t) (parse/expr d))]
     [`(ind-W ,l ,t ,m ,e)
       (IndW (parse/expr l) (parse/expr t) (parse/expr m) (parse/expr e))]
+    [`(ind-Bool ,l ,t ,m ,true ,false)
+      (IndBool (parse/expr l) (parse/expr t) (parse/expr m) (parse/expr true)
+        (parse/expr false))]
     [`(,f ,a ...)
       (foldl
         (λ ([a : AstExpr] [f : AstExpr]) (App f a))
@@ -175,7 +196,7 @@
     (member
       v
       '(λ lam Π Pi -> : let Empty ind-Empty Unit lzero lsucc lmax Level Type
-        W w ind-W = ind-= Refl))))
+        W w ind-W = ind-= Refl true false Bool ind-Bool))))
 
 (: parse/variable (-> Symbol Var))
 (define (parse/variable v)
@@ -225,7 +246,12 @@
     [(w t d) (Vw (eval/expr env t) (eval/expr env d))]
     [(IndW l t m e)
       (do-ind-w env (eval/expr env l) (eval/expr env t) (eval/expr env m)
-        (eval/expr env e))]))
+        (eval/expr env e))]
+    [(BoolT) (VBoolT)]
+    [(Bool v) (VBool v)]
+    [(IndBool l t m true false)
+      (do-ind-bool env (eval/expr env l) (eval/expr env t) (eval/expr env m)
+        (eval/expr env true) (eval/expr env false))]))
 
 (: eval/bind (-> VEnv TBind VBind))
 (define (eval/bind env b)
@@ -268,7 +294,9 @@
           (eval/expr
             (env-set env t (VNeu (NVar (VBind-name t^)) (VBind-type t^)))
             a)))]
-    [(Vw t d) (w (quote/value t) (quote/value d))]))
+    [(Vw t d) (w (quote/value t) (quote/value d))]
+    [(VBoolT) (BoolT)]
+    [(VBool v) (Bool v)]))
 
 (: quote/neutral (-> Neutral TypedExpr))
 (define (quote/neutral n)
@@ -283,7 +311,10 @@
         (quote/value refl))]
     [(NIndW l t m e)
       (IndW (quote/value l) (quote/neutral t) (quote/value m)
-        (quote/value e))]))
+        (quote/value e))]
+    [(NIndBool l t m true false)
+      (IndBool (quote/value l) (quote/neutral t) (quote/value m)
+        (quote/value true) (quote/value false))]))
 
 (: quote/bind (-> VBind TBind))
 (define (quote/bind b)
@@ -326,9 +357,19 @@
             (quote/value e))))]
     [(VNeu n (VW _ _ _)) (VNeu (NIndW l n m e) (do-app m t))]))
 
+(: do-ind-bool (-> VEnv Value Value Value Value Value Value))
+(define (do-ind-bool env l t m true false)
+  (match t
+    [(VBool #t) true]
+    [(VBool #f) false]
+    [(VNeu n (VBoolT)) (VNeu (NIndBool l n m true false) (do-app m t))]))
+
 (: do-lmax (-> Value Value Value))
 (define (do-lmax l r)
   (match (cons l r)
+    [(cons (VNeu n t) (VLZero)) l]
+    [(cons (VLZero) (VNeu n t)) r]
+    [_ #:when (value=? l r) l]
     [(cons (VNeu n t) r) (VNeu (NLMaxL n r) t)]
     [(cons l (VNeu n t)) (VNeu (NLMaxR l n) t)]
     [(cons l r) (max-levels l r)]))
@@ -394,7 +435,8 @@
     [(cons (VLSucc l) (VLSucc r)) (value=? l r)]
     [(cons (VEmptyT) (VEmptyT)) #t]
     [(cons (VUnitT) (VUnitT)) #t]
-    [(cons (VUnit) (VUnit)) #t]
+    [(cons (VUnit) _) #t]
+    [(cons _ (VUnit)) #t]
     [(cons (VEqT A-a from-a to-a) (VEqT A-b from-b to-b))
       (and (value=? A-a A-b) (value=? from-a from-b) (value=? to-a to-b))]
     [(cons (VRefl) (VRefl)) #t]
@@ -407,6 +449,8 @@
           (eval/expr (env-set env-b t-b var^) a-b)))]
     [(cons (Vw t-a d-a) (Vw t-b d-b))
       (and (value=? t-a t-b) (value=? d-a d-b))]
+    [(cons (VBoolT) (VBoolT)) #t]
+    [(cons (VBool a) (VBool b)) (boolean=? a b)]
     [_ #f]))
 
 (: neutral=? (-> Neutral Neutral Boolean))
@@ -435,6 +479,15 @@
         (neutral=? t-a t-b)
         (value=? m-a m-b)
         (value=? e-a e-b))]
+    [(cons
+      (NIndBool l-a t-a m-a true-a false-a)
+      (NIndBool l-b t-b m-b true-b false-b))
+      (and
+        (value=? l-a l-b)
+        (neutral=? t-a t-b)
+        (value=? m-a m-b)
+        (value=? true-a true-b)
+        (value=? false-a false-b))]
     [_ #f]))
 
 ; Bidirectional Type Checking
@@ -558,6 +611,19 @@
          [(m-v) (eval/expr venv m^)]
          [(t-v) (eval/expr venv t^)])
         (values (IndW l^ t^ m^ e^) (do-app m-v t-v)))]
+    [(Bool v) (values e (VBoolT))]
+    [(IndBool l t m true false)
+      (let*-values
+        ([(l^ l-y) (synth/expr-level tenv venv l)]
+         [(t^) (check/expr tenv venv t (VBoolT))]
+         [(m^)
+           (check/expr tenv venv m
+             (VPi venv (VBind (gensym) (VBoolT)) (Type l-y l^)))]
+         [(m-v) (eval/expr venv m^)]
+         [(true^) (check/expr tenv venv true (do-app m-v (VBool #t)))]
+         [(false^) (check/expr tenv venv false (do-app m-v (VBool #f)))]
+         [(t-v) (eval/expr venv t^)])
+        (values (IndBool l^ t^ m^ true^ false^) (do-app m-v t-v)))]
     [else (error 'synth/expr "Cannot synthesize type for ~a" (unparse/expr e))]))
 
 (: tmax (-> Natural Natural Value Value Value))
@@ -682,6 +748,7 @@
            (check/expr tenv venv d
              (VPi arity-env (VBind (gensym) (eval/expr (env-set arity-env tag tag-e-v) arity)) (quote/value t)))])
         (w tag-e^ d^))]
+    [(cons (BoolT) (VType _ _)) (BoolT)]
     [else
       (define-values (e^ t^) (synth/expr tenv venv e))
       (if (not (value=? t t^))
@@ -748,7 +815,13 @@
     [(w t d) `(w ,(unparse/expr t) ,(unparse/expr d))]
     [(IndW l t m e)
       `(ind-W ,(unparse/expr l) ,(unparse/expr t) ,(unparse/expr m)
-        ,(unparse/expr e))]))
+        ,(unparse/expr e))]
+    [(BoolT) `Bool]
+    [(Bool #t) `true]
+    [(Bool #f) `false]
+    [(IndBool l t m true false)
+     `(ind-Bool ,(unparse/expr l) ,(unparse/expr t) ,(unparse/expr m)
+        ,(unparse/expr true) ,(unparse/expr false))]))
 
 (: unparse/app (-> AstExpr (Listof Any)))
 (define (unparse/app e)
