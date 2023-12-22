@@ -6,7 +6,8 @@
 (define-type (Expr b r)
   (U Var (Ann r) (Lam b r) (App r) (Pi r) (Type r) Level LZero (LSucc r)
     (LMax r) EmptyT (IndEmpty r) UnitT UnitLit (EqT r) Refl (IndEq r)
-    (W r) (w r) (IndW r) BoolT Bool (IndBool r)))
+    (W r) (w r) (IndW r) BoolT Bool (IndBool r) (Sigma r) (pair r)
+    (first r) (second r)))
 
 (struct Var ([name : Symbol]) #:transparent)
 
@@ -57,6 +58,14 @@
 (struct (r) IndBool
   ([l : r] [t : r] [m : r] [true : r] [false : r]) #:transparent)
 
+(struct (r) Sigma ([fst : (TypedBind r)] [snd : r]) #:transparent)
+
+(struct (r) pair ([fst : r] [snd : r]) #:transparent)
+
+(struct (r) first ([e : r]) #:transparent)
+
+(struct (r) second ([e : r]) #:transparent)
+
 (struct (r) TypedBind ([name : Symbol] [type : r]) #:transparent)
 
 (struct UntypedBind ([name : Symbol]) #:transparent)
@@ -80,7 +89,7 @@
 
 (define-type Value
   (U VNeu VLam VPi VType VLevel VLZero VLSucc VEmptyT VUnitT VUnit VEqT VRefl
-    VW Vw VBoolT VBool))
+    VW Vw VBoolT VBool VSigma VPair))
 
 (struct VNeu ([neu : Neutral] [type : Value]) #:transparent)
 
@@ -116,8 +125,12 @@
 
 (struct VBool ([val : Boolean]) #:transparent)
 
+(struct VSigma ([env : VEnv] [fst : VBind] [snd : TypedExpr]) #:transparent)
+
+(struct VPair ([fst : Value] [snd : Value]) #:transparent)
+
 (define-type Neutral
-  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW NIndBool))
+  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW NIndBool NFirst NSecond))
 
 (struct NVar ([name : Symbol]) #:transparent)
 
@@ -140,6 +153,10 @@
 (struct NIndBool
   ([l : Value] [t : Neutral] [m : Value] [true : Value] [false : Value])
   #:transparent)
+
+(struct NFirst ([e : Neutral]) #:transparent)
+
+(struct NSecond ([e : Neutral]) #:transparent)
 
 ; Env
 
@@ -183,6 +200,10 @@
     [`(ind-Bool ,l ,t ,m ,true ,false)
       (IndBool (parse/expr l) (parse/expr t) (parse/expr m) (parse/expr true)
         (parse/expr false))]
+    [`(,(or 'Σ 'Sigma 'Pair) ,b ,s) (Sigma (parse/typed-bind b) (parse/expr s))]
+    [`(cons ,f ,s) (pair (parse/expr f) (parse/expr s))]
+    [`(first ,e) (first (parse/expr e))]
+    [`(second ,e) (second (parse/expr e))]
     [`(,f ,a ...)
       (foldl
         (λ ([a : AstExpr] [f : AstExpr]) (App f a))
@@ -196,7 +217,7 @@
     (member
       v
       '(λ lam Π Pi -> : let Empty ind-Empty Unit lzero lsucc lmax Level Type
-        W w ind-W = ind-= Refl true false Bool ind-Bool))))
+        W w ind-W = ind-= Refl true false Bool ind-Bool Σ Sigma Pair cons first second))))
 
 (: parse/variable (-> Symbol Var))
 (define (parse/variable v)
@@ -251,7 +272,11 @@
     [(Bool v) (VBool v)]
     [(IndBool l t m true false)
       (do-ind-bool env (eval/expr env l) (eval/expr env t) (eval/expr env m)
-        (eval/expr env true) (eval/expr env false))]))
+        (eval/expr env true) (eval/expr env false))]
+    [(Sigma b s) (VSigma env (eval/bind env b) s)]
+    [(pair f s) (VPair (eval/expr env f) (eval/expr env s))]
+    [(first e) (do-first (eval/expr env e))]
+    [(second e) (do-second (eval/expr env e))]))
 
 (: eval/bind (-> VEnv TBind VBind))
 (define (eval/bind env b)
@@ -296,7 +321,16 @@
             a)))]
     [(Vw t d) (w (quote/value t) (quote/value d))]
     [(VBoolT) (BoolT)]
-    [(VBool v) (Bool v)]))
+    [(VBool v) (Bool v)]
+    [(VSigma env b s)
+      (define b^ (refresh b))
+      (Sigma
+        (quote/bind b^)
+        (quote/value
+          (eval/expr
+            (env-set env b (VNeu (NVar (VBind-name b^)) (VBind-type b^)))
+            s)))]
+    [(VPair f s) (pair (quote/value f) (quote/value s))]))
 
 (: quote/neutral (-> Neutral TypedExpr))
 (define (quote/neutral n)
@@ -314,7 +348,9 @@
         (quote/value e))]
     [(NIndBool l t m true false)
       (IndBool (quote/value l) (quote/neutral t) (quote/value m)
-        (quote/value true) (quote/value false))]))
+        (quote/value true) (quote/value false))]
+    [(NFirst n) (first (quote/neutral n))]
+    [(NSecond n) (second (quote/neutral n))]))
 
 (: quote/bind (-> VBind TBind))
 (define (quote/bind b)
@@ -363,6 +399,19 @@
     [(VBool #t) true]
     [(VBool #f) false]
     [(VNeu n (VBoolT)) (VNeu (NIndBool l n m true false) (do-app m t))]))
+
+(: do-first (-> Value Value))
+(define (do-first p)
+  (match p
+    [(VPair f _) f]
+    [(VNeu n (VSigma _ b _)) (VNeu (NFirst n) (VBind-type b))]))
+
+(: do-second (-> Value Value))
+(define (do-second p)
+  (match p
+    [(VPair _ s) s]
+    [(VNeu n (VSigma env b s))
+      (VNeu (NSecond n) (eval/expr (env-set-neu env b (VBind-type b)) s))]))
 
 (: do-lmax (-> Value Value Value))
 (define (do-lmax l r)
@@ -451,6 +500,15 @@
       (and (value=? t-a t-b) (value=? d-a d-b))]
     [(cons (VBoolT) (VBoolT)) #t]
     [(cons (VBool a) (VBool b)) (boolean=? a b)]
+    [(cons (VPi env-a b-a s-a) (VPi env-b b-b s-b))
+      (define b^ (VNeu (NVar (gensym)) (VBind-type b-a)))
+      (and
+        (value=? (VBind-type b-a) (VBind-type b-b))
+        (value=?
+          (eval/expr (env-set env-a b-a b^) s-a)
+          (eval/expr (env-set env-b b-b b^) s-b)))]
+    [(cons (VPair f-a s-a) (VPair f-b s-b))
+      (and (value=? f-a f-b) (value=? s-a s-b))]
     [_ #f]))
 
 (: neutral=? (-> Neutral Neutral Boolean))
@@ -488,6 +546,8 @@
         (value=? m-a m-b)
         (value=? true-a true-b)
         (value=? false-a false-b))]
+    [(cons (NFirst a) (NFirst b)) (neutral=? a b)]
+    [(cons (NSecond a) (NSecond b)) (neutral=? a b)]
     [_ #f]))
 
 ; Bidirectional Type Checking
@@ -624,6 +684,22 @@
          [(false^) (check/expr tenv venv false (do-app m-v (VBool #f)))]
          [(t-v) (eval/expr venv t^)])
         (values (IndBool l^ t^ m^ true^ false^) (do-app m-v t-v)))]
+    [(Sigma b s)
+      (let*-values
+        ([(b^ b-t b-t-y b-t-x) (synth/bind tenv venv b)]
+         [(s-tenv) (env-set tenv b^ b-t)]
+         [(s-venv) (env-set-neu venv b^ b-t)]
+         [(s^ s-y s-x) (synth/expr-type s-tenv s-venv s)])
+        (values (Sigma b^ s^) (tmax b-t-y s-y b-t-x s-x)))]
+    [(first e)
+      (let*-values
+        ([(e^ e-t s-env b s) (synth/expr-sigma tenv venv e)])
+        (values (first e^) (VBind-type b)))]
+    [(second e)
+      (let*-values
+        ([(e^ e-t s-env b s) (synth/expr-sigma tenv venv e)]
+         [(e-v) (eval/expr venv e^)])
+        (values (second e^) (eval/expr (env-set s-env b (do-first e-v)) s)))]
     [else (error 'synth/expr "Cannot synthesize type for ~a" (unparse/expr e))]))
 
 (: tmax (-> Natural Natural Value Value Value))
@@ -632,6 +708,17 @@
     [(= a-y b-y) (VType a-y (do-lmax a-x b-x))]
     [(> a-y b-y) (VType a-y a-x)]
     [else (VType b-y b-x)]))
+
+(: synth/expr-sigma
+  (-> TEnv VEnv AstExpr (values TypedExpr Value VEnv VBind TypedExpr)))
+(define (synth/expr-sigma tenv venv s)
+  (define-values (s^ s-t) (synth/expr tenv venv s))
+  (match s-t
+    [(VSigma env b s) (values s^ s-t env b s)]
+    [else
+      (error 'synth/expr-sigma "Expected ~a to be a Sigma type, but is a ~a"
+        (unparse/expr s)
+        (unparse/expr (quote/value s-t)))]))
 
 (: synth/expr-w
   (-> TEnv VEnv AstExpr (values TypedExpr Value VEnv VBind TypedExpr)))
@@ -749,6 +836,12 @@
              (VPi arity-env (VBind (gensym) (eval/expr (env-set arity-env tag tag-e-v) arity)) (quote/value t)))])
         (w tag-e^ d^))]
     [(cons (BoolT) (VType _ _)) (BoolT)]
+    [(cons (pair f s) (VSigma s-s-env b s-s))
+      (let*-values
+        ([(f^) (check/expr tenv venv f (VBind-type b))]
+         [(f-v) (eval/expr venv f^)]
+         [(s^) (check/expr tenv venv s (eval/expr (env-set s-s-env b f-v) s-s))])
+        (pair f^ s^))]
     [else
       (define-values (e^ t^) (synth/expr tenv venv e))
       (if (not (value=? t t^))
@@ -821,7 +914,11 @@
     [(Bool #f) `false]
     [(IndBool l t m true false)
      `(ind-Bool ,(unparse/expr l) ,(unparse/expr t) ,(unparse/expr m)
-        ,(unparse/expr true) ,(unparse/expr false))]))
+        ,(unparse/expr true) ,(unparse/expr false))]
+    [(Sigma b s) `(Σ ,(unparse/bind b) ,(unparse/expr s))]
+    [(pair f s) `(cons ,(unparse/expr f) ,(unparse/expr s))]
+    [(first e) `(first ,(unparse/expr e))]
+    [(second e) `(second ,(unparse/expr e))]))
 
 (: unparse/app (-> AstExpr (Listof Any)))
 (define (unparse/app e)

@@ -1,13 +1,19 @@
 (def [Nat-Arity : (-> [_ : (Bool : (Type 0 lzero))] (Type 0 lzero))]
-  (λ tag
-    (ind-Bool ((lsucc lzero) : ((Level 0) : (Type 1 lzero)))
+  (λ tag (ind-Bool ((lsucc lzero) : ((Level 0) : (Type 1 lzero)))
       tag
       (λ _ (Type 0 lzero))
       Unit
       Empty)))
 
-(def Nat
+(def Nat*
   (W [tag : (Bool : (Type 0 lzero))] (Nat-Arity tag)))
+
+(def [Nat*-Canonical : (-> Nat* (Type 0 lzero))]
+  (λ n
+    (ind-W (lzero : ((Level 0) : (Type 0 lzero))) n
+      (λ _ (Type 0 lzero))
+      (λ tag (λ d (λ ih
+        (ind-Bool (lzero : ((Level 0) : (Type 0 lzero)))
 
 (def [z : Nat]
   (w
