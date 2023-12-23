@@ -1,4 +1,4 @@
-(def [Nat-Arity : (-> [_ : (Bool : (Type 0 lzero))] (Type 0 lzero))]
+(def [Nat*-Arity : (-> [_ : (Bool : (Type 0 lzero))] (Type 0 lzero))]
   (λ tag (ind-Bool ((lsucc lzero) : ((Level 0) : (Type 1 lzero)))
       tag
       (λ _ (Type 0 lzero))
@@ -6,26 +6,35 @@
       Empty)))
 
 (def Nat*
-  (W [tag : (Bool : (Type 0 lzero))] (Nat-Arity tag)))
+  (W [tag : (Bool : (Type 0 lzero))] (Nat*-Arity tag)))
 
-(def [Nat*-Canonical : (-> Nat* (Type 0 lzero))]
-  (λ n
-    (ind-W (lzero : ((Level 0) : (Type 0 lzero))) n
-      (λ _ (Type 0 lzero))
-      (λ tag (λ d (λ ih
-        (ind-Bool (lzero : ((Level 0) : (Type 0 lzero)))
-
-(def [z : Nat]
+(def [z* : Nat*]
   (w
     false
     (λ e
       (ind-Empty
         (lzero : ((Level 0) : (Type 1 lzero)))
         e
-        (λ _ Nat)))))
+        (λ _ Nat*)))))
+
+
+(def [Nat*-Canonical : (-> Nat* (Type 0 lzero))]
+  (λ n
+    (ind-W ((lsucc lzero) : ((Level 0) : (Type 1 lzero))) n
+      (λ _ (Type 0 lzero))
+      (λ tag (λ d (λ ih
+        ((ind-Bool ((lsucc lzero) : ((Level 0) : (Type 1 lzero))) tag
+          (λ tag (-> (-> (Nat*-Arity tag) (Type 0 lzero)) (Type 0 lzero)))
+          (λ ih (ih ()))
+          (λ _ (= Nat* n z*))) ih)))))))
+
+(def Nat (Σ [n : Nat*] (Nat*-Canonical n)))
+
+(def [z : Nat] (cons z* Refl))
 
 (def [s : (-> Nat Nat)]
-  (λ n (w true (λ _ n))))
+  (λ n
+    (cons (w true (λ _ (first n))) (second n))))
 
 (def [two : Nat] (s (s z)))
 
@@ -39,7 +48,7 @@
   (λ l (λ A (λ z-case (λ s-case (λ n
     (ind-W l n (λ _ A)
       (λ tag (λ d (λ ih
-        ((ind-Bool l tag (λ t (-> (-> (Nat-Arity t) Nat) (-> (-> (Nat-Arity t) A) A)))
+        ((ind-Bool l tag (λ t (-> (-> (Nat*-Arity t) Nat) (-> (-> (Nat*-Arity t) A) A)))
            (λ d (λ ih (s-case (d ()) (ih ()))))
            (λ d (λ ih z-case)))
          d ih)))))))))))
@@ -64,8 +73,8 @@
       (λ tag (λ d (λ ih
         ((ind-Bool l tag
           (λ t
-            (Π [d : (-> (Nat-Arity t) Nat)]
-              (Π [ih : (-> [i : (Nat-Arity t)] (m (d i)))]
+            (Π [d : (-> (Nat*-Arity t) Nat)]
+              (Π [ih : (-> [i : (Nat*-Arity t)] (m (d i)))]
                 (m (w t d)))))
           (λ d (λ ih
             (s-case

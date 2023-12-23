@@ -45,3 +45,5 @@
             (define-values (e^ e-t) (synth/expr tenv venv e))
             (pretty-display `(,(unparse/expr (quote/value (eval/expr venv e^))) : ,(unparse/expr (quote/value e-t))))
             (repl-env tenv venv)])))))
+
+(repl)

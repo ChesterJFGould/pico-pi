@@ -404,14 +404,16 @@
 (define (do-first p)
   (match p
     [(VPair f _) f]
-    [(VNeu n (VSigma _ b _)) (VNeu (NFirst n) (VBind-type b))]))
+    [(VNeu n (VSigma _ b _)) (VNeu (NFirst n) (VBind-type b))]
+    [else (error 'do-first "Match fail! ~a" (unparse/expr (quote/value p)))]))
 
 (: do-second (-> Value Value))
 (define (do-second p)
   (match p
     [(VPair _ s) s]
     [(VNeu n (VSigma env b s))
-      (VNeu (NSecond n) (eval/expr (env-set-neu env b (VBind-type b)) s))]))
+      (VNeu (NSecond n) (eval/expr (env-set env b (do-first p)) s))]
+    [else (error 'do-second "Match fail!")]))
 
 (: do-lmax (-> Value Value Value))
 (define (do-lmax l r)
@@ -500,7 +502,7 @@
       (and (value=? t-a t-b) (value=? d-a d-b))]
     [(cons (VBoolT) (VBoolT)) #t]
     [(cons (VBool a) (VBool b)) (boolean=? a b)]
-    [(cons (VPi env-a b-a s-a) (VPi env-b b-b s-b))
+    [(cons (VSigma env-a b-a s-a) (VSigma env-b b-b s-b))
       (define b^ (VNeu (NVar (gensym)) (VBind-type b-a)))
       (and
         (value=? (VBind-type b-a) (VBind-type b-b))
@@ -833,14 +835,17 @@
          [(tag-e-v) (eval/expr venv tag-e^)]
          [(d^)
            (check/expr tenv venv d
-             (VPi arity-env (VBind (gensym) (eval/expr (env-set arity-env tag tag-e-v) arity)) (quote/value t)))])
+             (VPi venv (VBind (gensym) (eval/expr (env-set arity-env tag tag-e-v) arity)) (quote/value t)))])
         (w tag-e^ d^))]
     [(cons (BoolT) (VType _ _)) (BoolT)]
     [(cons (pair f s) (VSigma s-s-env b s-s))
       (let*-values
         ([(f^) (check/expr tenv venv f (VBind-type b))]
          [(f-v) (eval/expr venv f^)]
-         [(s^) (check/expr tenv venv s (eval/expr (env-set s-s-env b f-v) s-s))])
+         [(_) (displayln (unparse/expr (quote/value (VBind-type b))))]
+         [(_) (displayln (unparse/expr (quote/value f-v)))]
+         [(s-s-v) (eval/expr (env-set s-s-env b f-v) s-s)]
+         [(s^) (check/expr tenv venv s s-s-v)])
         (pair f^ s^))]
     [else
       (define-values (e^ t^) (synth/expr tenv venv e))
