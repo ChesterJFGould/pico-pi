@@ -382,15 +382,24 @@
 (define (do-ind-w env l t m e)
   (match t
     [(Vw tag data)
-      (define t (gensym 't))
+      (define t-n (gensym 't))
       (define t-t
         (match data
           [(VLam _ (VBind _ t-t) _) t-t]
           [(VNeu _ (VPi _ (VBind _ t-t) _)) t-t]))
-      (do-app (do-app (do-app e tag) data)
-        (VLam env (VBind t t-t)
-          (IndW (quote/value l) (App (quote/value data) (Var t)) (quote/value m)
-            (quote/value e))))]
+      (define l-n (gensym 'l))
+      (define data-n (gensym 'data))
+      (define m-n (gensym 'm))
+      (define e-n (gensym 'e))
+      (: env^ Env)
+      (define env^
+        (env-set* env
+          (ann (list l-n data-n m-n e-n) (Listof Symbol))
+          (ann (list l data m e) (Listof Value))))
+      (do-app
+        (do-app (do-app e tag) data)
+        (VLam env^ (VBind t-n t-t)
+          (IndW (Var l-n) (App (Var data-n) (Var t-n)) (Var m-n) (Var e-n))))]
     [(VNeu n (VW _ _ _)) (VNeu (NIndW l n m e) (do-app m t))]))
 
 (: do-ind-bool (-> VEnv Value Value Value Value Value Value))
@@ -437,11 +446,16 @@
 (: empty-env Env)
 (define empty-env (hash))
 
-(: env-set (-> Env (U TBind VBind) Value Env))
+(: env-set (-> Env (U TBind VBind Symbol) Value Env))
 (define (env-set env b v)
   (match b
     [(TypedBind n _) (hash-set env n v)]
-    [(VBind n _) (hash-set env n v)]))
+    [(VBind n _) (hash-set env n v)]
+    [(? symbol? n) (hash-set env n v)]))
+
+(: env-set* (-> Env (Listof (U TBind VBind Symbol)) (Listof Value) Env))
+(define (env-set* env bs vs)
+  (foldr (λ ([b : (U TBind VBind Symbol)] [v : Value] [env : Env]) (env-set env b v)) env bs vs))
 
 (: env-set-neu (-> Env (U TBind VBind) Value Env))
 (define (env-set-neu env b t)
@@ -509,8 +523,10 @@
         (value=?
           (eval/expr (env-set env-a b-a b^) s-a)
           (eval/expr (env-set env-b b-b b^) s-b)))]
-    [(cons (VPair f-a s-a) (VPair f-b s-b))
-      (and (value=? f-a f-b) (value=? s-a s-b))]
+    [(cons (VPair f-a s-a) b)
+      (and (value=? f-a (do-first b)) (value=? s-a (do-second b)))]
+    [(cons a (VPair f-b s-b))
+      (and (value=? (do-first a) f-b) (value=? (do-second a) s-b))]
     [_ #f]))
 
 (: neutral=? (-> Neutral Neutral Boolean))
@@ -842,8 +858,6 @@
       (let*-values
         ([(f^) (check/expr tenv venv f (VBind-type b))]
          [(f-v) (eval/expr venv f^)]
-         [(_) (displayln (unparse/expr (quote/value (VBind-type b))))]
-         [(_) (displayln (unparse/expr (quote/value f-v)))]
          [(s-s-v) (eval/expr (env-set s-s-env b f-v) s-s)]
          [(s^) (check/expr tenv venv s s-s-v)])
         (pair f^ s^))]
