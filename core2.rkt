@@ -1,0 +1,37 @@
+#lang typed/racket
+
+(provide (all-defined-out))
+
+(define-type (Expr b r)
+  (U Var (Ann r) (Lam b r) (App r) (BindT r) (Type r) LevelT LZero (LSucc r)
+    (LMax r) EmptyT (IndEmpty r) UnitT Unit (EqT r) Refl (IndEq r) (W r)
+    (IndW r) BoolT Bool (IndBool r) (Cons r) (First r) (Second r)))
+
+(struct Var ([name : Symbol]))
+(struct (r) Ann ([val : r] [type : r]))
+(struct (b r) Lam ([x : b] [body : r]))
+(struct (r) App ([f : r] [a : r]))
+(struct (r) BindT ([kind : BindKind] [x : (TypedBind r)] [body : r]))
+(struct (r) Type ([y : Natural] [x : r]))
+(struct Level ([y : Natural]))
+(struct LZero ())
+(struct (r) LSucc ([val : r]))
+(struct (r) LMax ([l : r] [r : r]))
+(struct EmptyT ())
+(struct (r) IndEmpty ([l : r] [t : r] [m : r]))
+(struct UnitT ())
+(struct Unit ())
+(struct (r) EqT ([type : r] [from : r] [to : r]))
+(struct Refl ())
+(struct (r) IndEq ([l : r] [t : r] [m : r] [refl : r]))
+(struct (r) W ([tag : r] [data : r]))
+(struct (r) IndW ([l : r] [t : r] [m : r] [e : r]))
+(struct BoolT ())
+(struct Bool ())
+(struct (r) IndBool ([l : r] [t : r] [m : r] [true : r] [false : r]))
+(struct (r) Cons ([fst : r] [snd : r]))
+(struct (r) First ([val : r]))
+(struct (r) Second ([val : r]))
+
+(define-type BindKind (U 'Pi 'Sigma 'W))
+
