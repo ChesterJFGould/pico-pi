@@ -3,7 +3,7 @@
 (provide repl)
 
 (require
-  "core.rkt"
+  "core2.rkt"
   racket/pretty)
 
 (define-type Repl
@@ -38,8 +38,12 @@
             (define-values (var^ val^ type) (check/bind-expr tenv venv var val))
             (pretty-display (unparse/bind var^))
             (pretty-display (unparse/expr (quote/value (eval/expr venv val^))))
-            (define tenv^ (env-set tenv var^ type))
-            (define venv^ (env-set venv var^ (eval/expr venv val^)))
+            (define tenv^ (env-set tenv (TypedBind-x var^) type))
+            (define venv^
+              (env-set venv (TypedBind-x var^)
+                (VChoice
+                  (lazy (VNeu (NVar (TypedBind-x var^)) (lazy type)))
+                  (lazy (eval/expr venv val^)))))
             (repl-env tenv^ venv^)]
           [(RExpr e)
             (define-values (e^ e-t) (synth/expr tenv venv e))

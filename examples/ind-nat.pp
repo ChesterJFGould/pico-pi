@@ -11,9 +11,9 @@
 (def [z*-data : (-> (Empty : (Type 0 lzero)) Nat*)]
   (λ e
     (ind-Empty
-      (lzero : ((Level 0) : (Type 1 lzero)))
+      lzero
       e
-      (λ _ Nat*))))
+      Nat*)))
 
 (def [z* : Nat*]
   (w false z*-data))
@@ -26,7 +26,7 @@
     (ind-W ((lsucc lzero) : ((Level 0) : (Type 1 lzero))) n
       (λ _ (Type 0 lzero))
       (λ tag (λ d (λ ih
-        ((ind-Bool ((lsucc lzero) : ((Level 0) : (Type 1 lzero))) tag
+        ((ind-Bool (lsucc lzero) tag
           (λ tag (-> (-> (Nat*-Arity tag) Nat*) (-> (-> (Nat*-Arity tag) (Type 0 lzero)) (Type 0 lzero))))
           (λ d (λ ih (ih ())))
           (λ d (λ _ (= (-> (Empty : (Type 0 lzero)) Nat*) z*-data d)))) d ih)))))))
