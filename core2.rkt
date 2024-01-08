@@ -294,7 +294,10 @@
       (define-values (t-t env)
         (match (whnf d)
           [(VClos env (Lam (TypedBind _ t) _)) (values t env)]
-          [(VClos env (BindT 'Pi (TypedBind _ t) _)) (values t env)]))
+          [(VNeu _ n-t)
+            (match (whnf (force n-t))
+              [(VClos env (BindT 'Pi (TypedBind _ t) _))
+                (values t env)])]))
       (define l-n (gensym 'l))
       (define d-n (gensym 'd))
       (define m-n (gensym 'm))
@@ -309,7 +312,11 @@
         (VClos env^
           (Lam (TypedBind t-n t-t)
             (IndW (Var l-n) (App (Var d-n) (Var t-n)) (Var m-n) (Var e-n)))))]
-    [(VNeu n _) (VNeu (NIndW l n m e) (lazy (do-app m t)))]))
+    [(VNeu n _) (VNeu (NIndW l n m e) (lazy (do-app m t)))]
+    [(VChoice n v)
+      (VChoice
+        (lazy (do-ind-w l (force n) m e))
+        (lazy (do-ind-w l (force v) m e)))]))
 
 (: do-ind-bool (-> Value Value Value Value Value Value))
 (define (do-ind-bool l t m true false)
@@ -569,7 +576,7 @@
     [(IndEq l t m refl)
       (match-let*-values
         ([(l^ l-y) (synth/expr-level tenv venv l)]
-         [(t^ (VEqT t-t t-l t-r)) (synth/expr-eq tenv venv t)]
+         [(t^ (app whnf (VEqT t-t t-l t-r))) (synth/expr-eq tenv venv t)]
          [(t-t-n) (gensym 't-t)]
          [(t-l-n) (gensym 't-l)]
          [(m-r-n) (gensym 'm-r)]
@@ -610,19 +617,19 @@
          [(e^)
            (check/expr tenv venv e
              (VClos
-               (env-set* venv
+               (env-set* env-a
                  (list tag-t-n arity-t-n w-t-n m-n)
                  (list tag-t arity-t w-t m-v))
-               (BindT 'Pi (TypedBind tag-n (Var tag-t-n))
+               (BindT 'Pi (TypedBind x x-t)
                  (BindT 'Pi
                    (TypedBind data-n
-                     (BindT 'Pi (TypedBind (gensym '_) (Var arity-t-n))
+                     (BindT 'Pi (TypedBind (gensym '_) a)
                        (Var w-t-n)))
                    (BindT 'Pi
                      (TypedBind ih-n
-                       (BindT 'Pi (TypedBind ih-t-n (Var arity-t-n))
+                       (BindT 'Pi (TypedBind ih-t-n a)
                          (App (Var m-n) (App (Var data-n) (Var ih-t-n)))))
-                     (App (Var m-n) (W (Var tag-n) (Var data-n))))))))]
+                     (App (Var m-n) (W (Var x) (Var data-n))))))))]
          [(t-v) (eval/expr venv t^)])
         (values (IndW l^ t^ m^ e^) (do-app m-v t-v)))]
     [(BoolT) (values e (VType 0 (VLZero)))]
@@ -722,7 +729,7 @@
       (match-let*-values
         ([(x-t-t-v) (eval/expr venv-t x-t-t)]
          [(x^) (check/bind tenv venv x x-t-t-v)]
-         [(x-n) (gensym (TypedBind-x x^))]
+         [(x-n) (TypedBind-x x^)]
          [(tenv-b) (env-set tenv (TypedBind-x x^) x-t-t-v)]
          [(venv-b)
            (env-set venv (TypedBind-x x^) (VNeu (NVar x-n) (lazy x-t-t-v)))]
@@ -751,9 +758,9 @@
     [(cons (Refl) (VEqT _ l r)) #:when (value=? l r) (Refl)]
     [(cons (Refl) (VEqT t l r))
       (error 'check/expr "Expected ~a and ~a to be the same ~a"
-        (unparse/expr (quote/value t))
         (unparse/expr (quote/value l))
-        (unparse/expr (quote/value r)))]
+        (unparse/expr (quote/value r))
+        (unparse/expr (quote/value t)))]
     [(cons (Refl) _) (check-mismatch e e-t)]
     [(cons
       (W tag data)
