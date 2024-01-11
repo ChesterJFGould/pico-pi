@@ -21,7 +21,7 @@
 
 (: repl (-> Void))
 (define (repl)
-  (repl-env empty-env empty-env))
+  (repl-env (empty-env) (empty-env)))
 
 (: repl-env (-> TEnv VEnv Void))
 (define (repl-env tenv venv)
@@ -34,20 +34,31 @@
       (with-handlers
         ([exn:fail? (λ ([e : exn]) (displayln (exn-message e)) (repl-env tenv venv))])
         (match r
-          [(Def var val)
-            (define-values (var^ val^ type) (check/bind-expr tenv venv var val))
-            (pretty-display (unparse/bind var^))
-            (pretty-display (unparse/expr (quote/value (eval/expr venv val^))))
-            (define tenv^ (env-set tenv (TypedBind-x var^) type))
-            (define venv^
-              (env-set venv (TypedBind-x var^)
-                (VChoice
-                  (lazy (VNeu (NVar (TypedBind-x var^)) (lazy type)))
-                  (lazy (eval/expr venv val^)))))
-            (repl-env tenv^ venv^)]
+          [(Def x v)
+            (match-let*-values
+              ([(x-n v^ x-t x-t-v) (check/bind-expr tenv venv x v)]
+               [(x-n^) (gensym x-n)]
+               [(tenv^)
+                 (env-set* tenv
+                   (list x-n x-n^)
+                   (list (cons x-n^ x-t-v) (cons x-n^ x-t-v)))]
+               [(x-v)
+                 (VChoice
+                   (lazy (VNeu (NVar x-n^) (lazy x-t-v)))
+                   (lazy (eval/expr venv v^)))]
+               [(venv^)
+                 (env-set* venv
+                   (list x-n x-n^)
+                   (list x-v x-v))])
+              (pretty-display (unparse/bind (TypedBind x-n^ x-t)))
+              (pretty-display (unparse/expr (quote/value (eval/expr venv v^))))
+              (repl-env tenv^ venv^))]
           [(RExpr e)
-            (define-values (e^ e-t) (synth/expr tenv venv e))
-            (pretty-display `(,(unparse/expr (quote/value (eval/expr venv e^))) : ,(unparse/expr (quote/value e-t))))
-            (repl-env tenv venv)])))))
+            (match-let*-values
+              ([(e^ e-t) (synth/expr tenv venv e)])
+              (pretty-display
+                `(,(unparse/expr (quote/value (eval/expr venv e^))) :
+                  ,(unparse/expr (quote/value e-t))))
+              (repl-env tenv venv))])))))
 
 (repl)

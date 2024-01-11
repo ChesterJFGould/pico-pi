@@ -76,32 +76,32 @@
 (struct NFirst ([e : Neutral]))
 (struct NSecond ([e : Neutral]))
 
-(define-type Env (HashTable Symbol Value))
-(define-type VEnv Env)
-(define-type TEnv Env)
+(define-type (Env a) (HashTable Symbol a))
+(define-type TEnv (Env (Pairof Symbol Value)))
+(define-type VEnv (Env Value))
 
 ;; Env
 
-(: empty-env Env)
-(define empty-env (hash))
+(: empty-env (All (a) (-> (Env a))))
+(define (empty-env) (hash))
 
-(: env-get (-> Env Symbol Value))
+(: env-get (All (a) (-> (Env a) Symbol a)))
 (define (env-get env x)
   (hash-ref env x))
 
-(: env-set (-> Env Symbol Value Env))
+(: env-set (All (a) (-> (Env a) Symbol a (Env a))))
 (define (env-set env x v)
   (hash-set env x v))
 
-(: env-set* (-> Env (Listof Symbol) (Listof Value) Env))
+(: env-set* (All (a) (-> (Env a) (Listof Symbol) (Listof a) (Env a))))
 (define (env-set* env xs vs)
   (foldr
-    (λ ([x : Symbol] [v : Value] [env : Env]) (env-set env x v))
+    (λ ([x : Symbol] [v : a] [env : (Env a)]) (env-set env x v))
     env
     xs
     vs))
 
-(: in-env? (-> Env Symbol Boolean))
+(: in-env? (All (a) (-> (Env a) Symbol Boolean)))
 (define (in-env? env x)
   (hash-has-key? env x))
 
@@ -507,7 +507,9 @@
 (define (synth/expr tenv venv e)
   (match e
     [(Var x) #:when (in-env? tenv x)
-      (values e (env-get tenv x))]
+      (match-let*-values
+        ([((cons x^ x-t)) (env-get tenv x)])
+        (values (Var x^) x-t))]
     [(Var x) (error 'synth/expr "Undefined variable: ~a" x)]
     [(Ann e t)
       (let*-values
@@ -516,16 +518,22 @@
         (values (Ann (check/expr tenv venv e t-v) t^) t-v))]
     [(Lam x b)
       (let*-values
-        ([(x^ x-t x-t-y x-t-x) (synth/bind tenv venv x)]
-         [(x-n) (gensym (TypedBind-x x^))]
-         [(tenv-b) (env-set tenv (TypedBind-x x^) x-t)]
-         [(venv-b) (env-set venv (TypedBind-x x^) (VNeu (NVar x-n) (lazy x-t)))]
-         [(b^ b-t) (synth/expr tenv-b venv-b b)]
-         [(x-t-n) (gensym 'x-t)])
+        ([(x-n x-t x-t-y x-t-x) (synth/bind tenv venv x)]
+         [(x-t-v) (eval/expr venv x-t)]
+         [(x-n^) (gensym x-n)]
+         [(tenv-b)
+           (env-set* tenv
+             (list x-n x-n^)
+             (list (cons x-n^ x-t-v) (cons x-n^ x-t-v)))]
+         [(venv-b)
+           (env-set* venv
+             (list x-n x-n^)
+             (list (VNeu (NVar x-n^) (lazy x-t-v)) (VNeu (NVar x-n^) (lazy x-t-v))))]
+         [(b^ b-t) (synth/expr tenv-b venv-b b)])
         ;; TODO: The quote here really pains me, and I'm not sure it's correct
-        (values (Lam x^ b^)
-          (VClos (env-set venv x-t-n x-t)
-            (BindT 'Pi (TypedBind x-n (Var x-t-n)) (quote/value b-t)))))]
+        (values (Lam (TypedBind x-n^ x-t) b^)
+          (VClos venv
+            (BindT 'Pi (TypedBind x-n^ x-t) (quote/value b-t)))))]
     [(App f a)
       (match-let*-values
         ([(f^ (app whnf (VClos venv-b (BindT 'Pi (TypedBind x x-t) b))))
@@ -536,12 +544,20 @@
         (values (App f^ a^) (eval/expr (env-set venv-b x a-v) b)))]
     [(BindT k x b)
       (match-let*-values
-        ([(x^ x-t x-t-y x-t-x) (synth/bind tenv venv x)]
-         [(x-n) (gensym (TypedBind-x x))]
-         [(tenv-b) (env-set tenv (TypedBind-x x) x-t)]
-         [(venv-b) (env-set venv (TypedBind-x x) (VNeu (NVar x-n) (lazy x-t)))]
+        ([(x-n x-t x-t-y x-t-x) (synth/bind tenv venv x)]
+         [(x-t-v) (eval/expr venv x-t)]
+         [(x-n^) (gensym x-n)]
+         [(tenv-b)
+           (env-set* tenv
+             (list x-n x-n^)
+             (list (cons x-n^ x-t-v) (cons x-n^ x-t-v)))]
+         [(x-v) (VNeu (NVar x-n^) (lazy x-t-v))]
+         [(venv-b) 
+           (env-set* venv
+             (list x-n x-n^)
+             (list x-v x-v))]
          [(b^ b-y b-x) (synth/expr-type tenv-b venv-b b)])
-        (values (BindT k x^ b^) (tmax x-t-y b-y x-t-x b-x)))]
+        (values (BindT k (TypedBind x-n^ x-t) b^) (tmax x-t-y b-y x-t-x b-x)))]
     [(Type y x)
       (match-let*-values
         ([(x^) (check/expr tenv venv x (VLevelT y))])
@@ -661,15 +677,15 @@
          [(s-t) (eval/expr (env-set env-e f-n (do-first e-v)) s)])
         (values (Second e^) s-t))]))
 
-(: synth/bind (-> TEnv VEnv AstBind (values TBind Value Natural Value)))
+(: synth/bind (-> TEnv VEnv AstBind (values Symbol TypedExpr Natural Value)))
 (define (synth/bind tenv venv b)
   (match b
     [(TypedBind x type)
       (match-let*-values
         ([(type^ type-y type-x) (synth/expr-type tenv venv type)])
         (values
-          (TypedBind x type^)
-          (eval/expr venv type^)
+          x
+          type^
           type-y
           type-x))]
     [(UntypedBind _)
@@ -728,17 +744,24 @@
     [(cons (Lam x b) (VClos venv-t (BindT 'Pi (TypedBind x-t-n x-t-t) b-t)))
       (match-let*-values
         ([(x-t-t-v) (eval/expr venv-t x-t-t)]
-         [(x^) (check/bind tenv venv x x-t-t-v)]
-         [(x-n) (TypedBind-x x^)]
-         [(tenv-b) (env-set tenv (TypedBind-x x^) x-t-t-v)]
+         [(x-n) (check/bind tenv venv x x-t-t-v)]
+         [(x-n^) (gensym x-n)]
+         [(tenv-b)
+           (env-set* tenv
+             (list x-n x-n^)
+             (list (cons x-n^ x-t-t-v) (cons x-n^ x-t-t-v)))]
+         [(x-v) (VNeu (NVar x-n^) (lazy x-t-t-v))]
          [(venv-b)
-           (env-set venv (TypedBind-x x^) (VNeu (NVar x-n) (lazy x-t-t-v)))]
+           (env-set* venv
+             (list x-n x-n^)
+             (list x-v x-v))]
          [(b-t-v)
            (eval/expr
-             (env-set venv-t x-t-n (VNeu (NVar x-n) (lazy x-t-t-v)))
+             (env-set venv-t x-t-n (VNeu (NVar x-n^) (lazy x-t-t-v)))
              b-t)]
          [(b^) (check/expr tenv-b venv-b b b-t-v)])
-        (Lam x^ b^))]
+        ;; TODO: This quote doesn't make a lot of sense
+        (Lam (TypedBind x-n^ (quote/value x-t-t-v)) b^))]
     [(cons (Lam _ _) _) (check-mismatch e e-t)]
     [(cons (LevelT y) (VType y-t x-t)) #:when (= (add1 y) y-t) (LevelT y)]
     [(cons (LevelT _) _) (check-mismatch e e-t)]
@@ -774,7 +797,7 @@
          [(w-t-n) (gensym 'w-t)]
          [(data^)
            (check/expr tenv venv data
-             (VClos (env-set* empty-env (list a-t-n w-t-n) (list a-t-v w-t-v))
+             (VClos (env-set* (ann (empty-env) VEnv) (list a-t-n w-t-n) (list a-t-v w-t-v))
                (BindT 'Pi (TypedBind (gensym '_) (Var a-t-n))
                  (Var w-t-n))))])
         (W tag^ data^))]
@@ -805,7 +828,7 @@
   (error 'check-mismatch "Expected ~a to be of type ~a"
     (unparse/expr e) (unparse/expr (quote/value t))))
 
-(: check/bind (-> TEnv VEnv AstBind Value TBind))
+(: check/bind (-> TEnv VEnv AstBind Value Symbol))
 (define (check/bind tenv venv b b-t)
   (match b
     [(TypedBind x x-t)
@@ -815,10 +838,10 @@
           (error 'check/bind "Expected binding ~a to be of type ~a"
             (unparse/bind b)
             (unparse/expr (quote/value b-t))))
-        (TypedBind x x-t^))]
-    [(UntypedBind x) (TypedBind x (quote/value b-t))]))
+        x)]
+    [(UntypedBind x) x]))
 
-(: check/bind-expr (-> TEnv VEnv AstBind AstExpr (values TBind TypedExpr Value)))
+(: check/bind-expr (-> TEnv VEnv AstBind AstExpr (values Symbol TypedExpr TypedExpr Value)))
 (define (check/bind-expr tenv venv b e)
   (match b
     [(TypedBind x x-t)
@@ -826,11 +849,11 @@
         ([(x-t^ x-t-y x-t-x) (synth/expr-type tenv venv x-t)]
          [(x-t-v) (eval/expr venv x-t^)]
          [(e^) (check/expr tenv venv e x-t-v)])
-        (values (TypedBind x x-t^) e^ x-t-v))]
+        (values x e^ x-t^ x-t-v))]
     [(UntypedBind x)
       (match-let*-values
         ([(e^ e-t) (synth/expr tenv venv e)])
-        (values (TypedBind x (quote/value e-t)) e^ e-t))]))
+        (values x e^ (quote/value e-t) e-t))]))
 
 (: tmax (-> Natural Natural Value Value Value))
 (define (tmax y-a y-b x-a x-b)
