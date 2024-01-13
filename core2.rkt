@@ -5,7 +5,7 @@
 (define-type (Expr b r)
   (U Var (Ann r) (Lam b r) (App r) (BindT r) (Type r) LevelT LZero (LSucc r)
     (LMax r) EmptyT (IndEmpty r) UnitT Unit (EqT r) Refl (IndEq r) (W r)
-    (IndW r) BoolT Bool (IndBool r) (Cons r) (First r) (Second r)))
+    (IndW r) BoolT Bool (IndBool r) (Cons r) (First r) (Second r) TODO))
 (struct Var ([name : Symbol]))
 (struct (r) Ann ([val : r] [type : r]))
 (struct (b r) Lam ([x : b] [body : r]))
@@ -31,6 +31,7 @@
 (struct (r) Cons ([fst : r] [snd : r]))
 (struct (r) First ([val : r]))
 (struct (r) Second ([val : r]))
+(struct TODO ())
 
 (define-type BindKind (U 'Pi 'Sigma 'W))
 (struct (r) TypedBind ([x : Symbol] [type : r]))
@@ -117,6 +118,7 @@
     [`Bool (BoolT)]
     [`true (Bool #t)]
     [`false (Bool #f)]
+    ['? (TODO)]
     [(? symbol?) (parse/variable e)]
     [`(,e : ,t) (Ann (parse/expr e) (parse/expr t))]
     [`(,(or 'λ 'lam) ,b ,bs ... ,e)
@@ -168,7 +170,8 @@
 (define (variable? v)
   (not
     (member v '(λ lam Π Pi -> : Empty ind-Empty Unit lzero lsucc lmax Level Type
-      W w ind-W = ind-= Refl true false Bool ind-Bool Σ Sigma cons first second))))
+      W w ind-W = ind-= Refl true false Bool ind-Bool Σ Sigma cons first second
+      ?))))
 
 (: parse/variable (-> Symbol AstExpr))
 (define (parse/variable x)
@@ -531,6 +534,8 @@
              (list (VNeu (NVar x-n^) (lazy x-t-v)) (VNeu (NVar x-n^) (lazy x-t-v))))]
          [(b^ b-t) (synth/expr tenv-b venv-b b)])
         ;; TODO: The quote here really pains me, and I'm not sure it's correct
+        ;; Update: I think it should be alright since it's not actually mixing
+        ;;   any environments, but should think about it more to be sure
         (values (Lam (TypedBind x-n^ x-t) b^)
           (VClos venv
             (BindT 'Pi (TypedBind x-n^ x-t) (quote/value b-t)))))]
@@ -675,7 +680,18 @@
            (synth/expr-bind 'Sigma tenv venv e)]
          [(e-v) (eval/expr venv e^)]
          [(s-t) (eval/expr (env-set env-e f-n (do-first e-v)) s)])
-        (values (Second e^) s-t))]))
+        (values (Second e^) s-t))]
+    [(TODO)
+      (error 'synth/expr
+        (string-join
+          (append
+            (list "")
+            (ann
+              (for/list ([(x p) tenv] #:when (symbol-interned? x))
+                (format "~a : ~a" x (unparse/expr (quote/value (cdr p)))))
+              (Listof String))
+            (list "--------------------" "?"))
+          "\n"))]))
 
 (: synth/bind (-> TEnv VEnv AstBind (values Symbol TypedExpr Natural Value)))
 (define (synth/bind tenv venv b)
@@ -813,6 +829,19 @@
          [(s^) (check/expr tenv venv s s-t-v)])
         (Cons f^ s^))]
     [(cons (Cons _ _) _) (check-mismatch e e-t)]
+    [(cons (TODO) _)
+      (error 'check/expr
+        (string-join
+          (append
+            (list "")
+            (ann
+              (for/list ([(x p) tenv] #:when (symbol-interned? x))
+                (format "~a : ~a" x (unparse/expr (quote/value (cdr p)))))
+              (Listof String))
+            (list
+              "--------------------"
+              (format "? : ~a~n" (unparse/expr (quote/value e-t)))))
+          "\n"))]
     [else
       (match-let*-values
         ([(e^ e-t^) (synth/expr tenv venv e)])
@@ -892,7 +921,8 @@
       `(ind-Bool ,@(map unparse/expr (list l t m true false)))]
     [(Cons f s) `(cons ,(unparse/expr f) ,(unparse/expr s))]
     [(First e) `(first ,(unparse/expr e))]
-    [(Second e) `(second ,(unparse/expr e))]))
+    [(Second e) `(second ,(unparse/expr e))]
+    [(TODO) '?]))
 
 
 (: unparse/bind (-> AstBind Any))
