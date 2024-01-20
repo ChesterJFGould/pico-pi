@@ -1,18 +1,19 @@
-(def my-cons
-  [A : Type] [B : Type] [a : A] [b : B]
-  {field car a}
-  {field cdr b})
+(def Dyn (Σ [type : Type] type))
 
-(def dyn
-  [A : Type] [a : A]
-  {field type A}
-  {field [val : type] a})
+(def [dyn : Dyn]
+  [A] [a]
+  [elim cons] A a)
 
-(def Dyn (Σ [type : Type] [val : type] ()))
+;; Above is same as:
+(def [dyn : Dyn]
+  [A] [a]
+  (cons A a))
 
-(def dyn-unit : Dyn (dyn Unit ()))
-(def dyn-bool : Dyn (dyn Bool true))
+(def dyn-unit (dyn Unit ()))
+(def dyn-bool (dyn Bool true))
 
-(def Σ : (-> {Dom : Type} [CoDom : (-> Dom Type)] Type)
-  {Dom : Type} [CoDom : (-> Dom Type)]
-  (SIGMA [x : Dom] (CoDom x)))
+(def [+ : (-> Nat Nat Nat)]
+  [elim ind-Nat] lzero
+  ([a : Nat] (Π [b : Nat] Nat))
+  ([b] b)
+  ([a] [ih : (-> Nat Nat)] [b] (s (ih b))))
