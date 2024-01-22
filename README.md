@@ -11,6 +11,7 @@ induction principle in the current language.
 2. [x] W-Types
 3. [x] Natural number encoding and proofs
 4. [ ] First class data type descriptions
+5. [ ] Bidirectional implicit parameters
 
 ## Hello, World!
 1. [ ] Quantitative Type Theory
