@@ -55,13 +55,10 @@
       (λ _ ind))))
 
 (def [Code-Data : (-> Code-Tag (Type 0 (lsucc lzero)))]
-  (ind-Code-Tag (lsucc (lsucc lzero))
-    (λ _ (Type 0 (lsucc lzero)))
+  (ind-Code-Tag (lsucc (lsucc lzero)) (λ _ (Type 0 (lsucc lzero)))
     Unit
     (Type 0 lzero)
-    (Type 0 lzero)))
-
-(def [Code-Arity : (-> [t : Code-Tag] (Code-Data t) (Type 0 lzero))]
+    (Type 0 lzero))) (def [Code-Arity : (-> [t : Code-Tag] (Code-Data t) (Type 0 lzero))]
   (ind-Code-Tag (lsucc lzero)
     (λ t (-> (Code-Data t) (Type 0 lzero)))
     (λ _ Empty)
@@ -186,12 +183,36 @@
       nil
       (ind Unit nil)))))
 
-(def [nil*-data : (-> Empty (El* nil))]
-  (λ e (ind-Empty lzero e (El* nil))))
+(def [nil*-data : (-> [c : Code] Empty (El* c))]
+  (λ c e (ind-Empty lzero e (El* c))))
 
-(def [El : (-> Code (Type 0 lzero))] El*)
+(def [El*-Canonical : (-> [c : Code] (El* c) (Type 0 lzero))]
+  (λ ind el
+    (ind-W (lsucc lzero) el
+      (λ el (Type 0 lzero))
+      ((ind-Code (lsucc lzero)
+         (λ c
+           (-> [t : (El-Data c)]
+               [d : (-> (El-Arity c t) (El* ind))]
+               [ih : (-> (El-Arity c t) (Type 0 lzero))]
+               (Type 0 lzero)))
+         (λ t d ih (= (-> Empty (El* ind)) (nil*-data ind) d))
+         (λ A children children-ih t
+           (children-ih (first t) (second t)))
+         (λ A child child-ih t d ih
+           (Σ
+             (-> [a : A] (ih (inl A (El-Arity child t) a)))
+             (child-ih t
+               (λ i (d (inr A (El-Arity child t) i)))
+               (λ i (ih (inr A (El-Arity child t) i)))))))
+        ind))))
 
-(def [Flattened-El : (-> Code Code (Type 0 lzero))]
+(def [El : (-> Code (Type 0 lzero))]
+  (λ c (Σ [el* : (El* c)] (El*-Canonical c el*))))
+
+#|
+;; This is only being kept as it triggers the VChoice bug
+(def [Flattened-El^ : (-> Code Code (Type 0 lzero))]
   (λ ind
     (ind-Code (lsucc lzero)
       (λ _ (Type 0 lzero))
@@ -199,27 +220,57 @@
       (λ A children ih (Σ [a : A] (ih a)))
       (λ A child ih (Σ (-> A (El ind)) ih)))))
 
-(def [mk-Flattened-El-Type : (-> Code Code (Type 0 lzero))]
+(def [Flattened-El : (-> Code (Type 0 lzero))]
+  (λ c (Flattened-El^ c c)))
+
+(def [mk-Flattened-El-Type^ : (-> Code Code (Type 0 lzero))]
   (λ ind
     (ind-Code (lsucc lzero)
        (λ _ (Type 0 lzero))
-       (Flattened-El ind ind)
+       (Flattened-El ind)
        (λ A children ih (-> [a : A] (ih a)))
        (λ A child ih (-> (-> A (El ind)) ih)))))
+
+(def [mk-Flattened-El-Type : (-> Code (Type 0 lzero))]
+  (λ c (mk-Flattened-El-Type^ c c)))
 
 (def
   [mk-Flattened-El :
     (-> [ind : Code]
-        (mk-Flattened-El-Type ind ind))]
+        (mk-Flattened-El-Type ind))]
   (λ ind
     ((ind-Code lzero
        (λ c
-         (-> (-> (Flattened-El ind c) (Flattened-El ind ind))
-             (mk-Flattened-El-Type ind c)))
+         (-> (-> (Flattened-El^ ind c) (Flattened-El ind))
+             (mk-Flattened-El-Type^ ind c)))
        (λ k (k ()))
        (λ A children ih k (λ a (ih a (λ rest (k (cons a rest))))))
        (λ A child ih k (λ children (ih (λ rest (k (cons children rest)))))))
       ind (λ x x))))
+
+(def [Flattened-El-Tag^ : (-> [ind : Code] [c : Code] (Flattened-El^ ind c) (El-Data c))]
+  (λ ind
+    (ind-Code lzero
+      (λ c (-> (Flattened-El^ ind c) (El-Data c)))
+      (λ _ ())
+      (λ A children ih fe (cons (first fe) (ih (first fe) (second fe))))
+      (λ A child ih fe (ih (second fe))))))
+
+(def [Flattened-El-Tag : (-> [c : Code] (Flattened-El c) (El-Data c))]
+  (λ c (Flattened-El-Tag^ c c)))
+
+(def [Flattened-El-Data : (-> [c : Code] [fe : (Flattened-El c)] (-> (El-Arity c (Flattened-El-Tag c fe)) (El c)))]
+  (λ ind
+    ((ind-Code lzero
+       (λ c (-> [fe : (Flattened-El^ ind c)] (-> (El-Arity c (Flattened-El-Tag^ ind c fe)) (El ind))))
+       (λ fe (λ e (ind-Empty lzero e (El ind))))
+       (λ A children ih fe (ih (first fe) (second fe)))
+       (λ A child ih fe
+         (ind-Or lzero A (El-Arity child (Flattened-El-Tag^ ind child (second fe)))
+           (λ _ (El ind))
+           (first fe)
+           (ih (second fe)))))
+      ind)))
 
 (def [Nat*-Code : Code]
   (nonind Bool (λ b
@@ -228,7 +279,105 @@
       nil
       (ind Unit nil)))))
 
-;; TODO: This and z*-flat exposed a bug, fix it
-(def [s*-flat : (-> (El Nat*-Code) (Flattened-El Nat*-Code Nat*-Code))]
+(def [z*-flat : (Flattened-El Nat*-Code)]
+  (mk-Flattened-El Nat*-Code true))
+
+;; TODO: This and z*-flat cause the VChoice bug
+(def [s*-flat : (-> (El Nat*-Code) (Flattened-El Nat*-Code))]
   (λ n
     (mk-Flattened-El Nat*-Code false (λ _ n))))
+|#
+
+(def [mk-El-Type^ : (-> Code Code (Type 0 lzero))]
+  (λ ind
+    (ind-Code (lsucc lzero)
+      (λ _ (Type 0 lzero))
+      (El ind)
+      (λ A children ih (-> [a : A] (ih a)))
+      (λ A child ih (-> (-> A (El ind)) ih)))))
+
+(def [mk-El-Type : (-> Code (Type 0 lzero))]
+  (λ c (mk-El-Type^ c c)))
+
+(def
+  [El*-Canonical^ :
+    (-> [ind : Code]
+        [c : Code]
+        [t : (El-Data c)]
+        [d : (-> (El-Arity c t) (El* ind))]
+        (Type 0 lzero))]
+  (λ ind
+    (ind-Code (lsucc lzero)
+      (λ c
+        (-> [t : (El-Data c)]
+            [d : (-> (El-Arity c t) (El* ind))]
+            (Type 0 lzero)))
+        (λ t d (= (-> Empty (El* ind)) (nil*-data ind) d))
+        (λ A children children-ih t
+          (children-ih (first t) (second t)))
+        (λ A child child-ih t d
+          (Σ
+            (-> [a : A]
+                (El*-Canonical ind (d (inl A (El-Arity child t) a))))
+            (child-ih t
+              (λ i (d (inr A (El-Arity child t) i)))))))))
+
+(def
+  [El*-Canonical-lemma :
+    (-> [c : Code]
+        [t : (El-Data c)]
+        [d : (-> (El-Arity c t) (El* c))]
+        (= (Type 0 lzero)
+          (El*-Canonical^ c c t d)
+          (El*-Canonical c (w t d))))]
+  (λ c t d ?))
+
+#|
+(def [mk-El : (-> [c : Code] (mk-El-Type c))]
+  (λ ind
+    ((ind-Code lzero
+       (λ c
+         (->
+           (->
+             (Σ
+               [t : (El-Data c)]
+               [d : (-> (El-Arity c t) (El ind))]
+               (El*-Canonical c (w t d)))
+             (El ind))
+           (mk-El-Type^ ind c)))
+       (λ k (k (cons () (nil*-data ind))))
+       (λ A children ih k
+         (λ a (ih a (λ f (k (cons (cons a (first f)) (second f)))))))
+       (λ A child ih k
+         (λ children
+           (ih
+             (λ f
+               (k
+                 (cons (first f)
+                   (ind-Or lzero A (El-Arity child (first f))
+                     (λ I (El ind))
+                     children
+                     (second f)))))))))
+      ind (λ f (w (first f) (second f))))))
+
+#|
+data Nat = Z | Succ (Unit -> Nat)
+|#
+
+(def [Nat*-Code : Code]
+  (nonind Bool (λ b
+    (ind-Bool (lsucc lzero) b
+      (λ _ Code)
+      nil
+      (ind Unit nil)))))
+
+(def [Nat* : (Type 0 lzero)] (El Nat*-Code))
+
+(def [z* : Nat*]
+  (mk-El Nat*-Code true))
+
+(def [s* : (-> Nat* Nat*)]
+  (λ n (mk-El Nat*-Code false (λ _ n))))
+
+(def [four* : Nat*] (s* (s* (s* (s* z*)))))
+|#

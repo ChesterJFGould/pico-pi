@@ -244,7 +244,7 @@
       (VNeu
         (NApp n a)
         (lazy
-          (match-let
+          (match-let*
             ([(VClos env (BindT 'Pi (TypedBind x _) b)) (whnf (force t))])
             (eval/expr (env-set env x a) b))))]
     [(VChoice n v)
@@ -419,7 +419,30 @@
   (match (cons a b)
     [(cons (VChoice n-a v-a) (VChoice n-b v-b))
       (or
-        (value=? (force n-a) (force n-b))
+        ;; TODO: This causes an issue where one of the terms is actually only
+        ;; well typed if we know it's value. For example, the stored type of a
+        ;; neutral which should be a function won't actually reduce to a Pi
+        ;; since we forget about its value. This causes some of the do-*
+        ;; operations to error because they expect the type of the target to be
+        ;; correct but it isn't, e.g. do-app expects the type to reduce to a Pi,
+        ;; but because we're in the neutral branch it doesn't, even though it
+        ;; would if we didn't forget the actual value of the neutral.
+        ;; The solution is to acknowledge that values also exist in an
+        ;; environment and pass that environment around, then modify whnf to
+        ;; also try and reduce neutrals by looking up the variable in the
+        ;; environment. Then all gensymed neutrals should be added to the
+        ;; environment such that they evaluate to themselves (e.g. when doing
+        ;; eta equality on functions). Although this may cause issues because
+        ;; in whnf we may want to iteratively lookup neutrals, but if the
+        ;; neutral evaluates to itself this would cause a loop. An alternative
+        ;; would be to be able to distinguish between neutrals which we actually
+        ;; know the value of (e.g. top level variables), and neutrals which we
+        ;; actually don't know (e.g. function parameters). Finally, this check
+        ;; is actually important since it prevents a lot of useless computation
+        ;; from happening during type checking (e.g. a-million = a-million would
+        ;; actually have to compute a-million without the check, instead of just
+        ;; realizing that a variable is equal to iself).
+        ; (value=? (force n-a) (force n-b))
         (value=? (force v-a) (force v-b)))]
     [(cons (VChoice _ a) b) (value=? (force a) b)]
     [(cons a (VChoice _ b)) (value=? a (force b))]

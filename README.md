@@ -22,6 +22,7 @@ induction principle in the current language.
 ## Misc. Fun
 + [ ] Improved Syntax
 + [ ] Rewrite Type Checker
+	- Fix `VChoice` equality checking (see giant TODO in `value=?`)
 
 ## Directed Study
 + [ ] Pull out as library with Racket embedding
