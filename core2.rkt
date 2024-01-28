@@ -590,7 +590,7 @@
       (match-let*-values
         ([(x^) (check/expr tenv venv x (VLevelT y))])
         (values (Type y x^) (VType y (VLSucc (eval/expr venv x^)))))]
-    [(LevelT y) (values e (VType y (VLZero)))]
+    [(LevelT y) (values e (VType (add1 y) (VLZero)))]
     [(LZero) (values e (VLevelT 0))]
     [(LSucc l)
       (match-let*-values

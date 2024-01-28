@@ -186,6 +186,38 @@
 (def [nil*-data : (-> [c : Code] Empty (El* c))]
   (λ c e (ind-Empty lzero e (El* c))))
 
+(def
+  [El*-Canonical^ :
+    (-> [ind : Code]
+        [c : Code]
+        [t : (El-Data c)]
+        [d : (-> (El-Arity c t) (El* ind))]
+        [ih : (-> (El-Arity c t) (Type 0 lzero))]
+        (Type 0 lzero))]
+  (λ ind
+    (ind-Code (lsucc lzero)
+      (λ c
+        (-> [t : (El-Data c)]
+            [d : (-> (El-Arity c t) (El* ind))]
+            [ih : (-> (El-Arity c t) (Type 0 lzero))]
+            (Type 0 lzero)))
+        (λ t d ih (= (-> Empty (El* ind)) (nil*-data ind) d))
+        (λ A children children-ih t
+          (children-ih (first t) (second t)))
+        (λ A child child-ih t d ih
+          (Σ
+            (-> [a : A] (ih (inl A (El-Arity child t) a)))
+            (child-ih t
+              (λ i (d (inr A (El-Arity child t) i)))
+              (λ i (ih (inr A (El-Arity child t) i)))))))))
+
+(def [El*-Canonical : (-> [c : Code] (El* c) (Type 0 lzero))]
+  (λ ind el
+    (ind-W (lsucc lzero) el
+      (λ el (Type 0 lzero))
+      (El*-Canonical^ ind ind))))
+
+#;
 (def [El*-Canonical : (-> [c : Code] (El* c) (Type 0 lzero))]
   (λ ind el
     (ind-W (lsucc lzero) el
@@ -300,39 +332,15 @@
   (λ c (mk-El-Type^ c c)))
 
 (def
-  [El*-Canonical^ :
-    (-> [ind : Code]
-        [c : Code]
-        [t : (El-Data c)]
-        [d : (-> (El-Arity c t) (El* ind))]
-        (Type 0 lzero))]
-  (λ ind
-    (ind-Code (lsucc lzero)
-      (λ c
-        (-> [t : (El-Data c)]
-            [d : (-> (El-Arity c t) (El* ind))]
-            (Type 0 lzero)))
-        (λ t d (= (-> Empty (El* ind)) (nil*-data ind) d))
-        (λ A children children-ih t
-          (children-ih (first t) (second t)))
-        (λ A child child-ih t d
-          (Σ
-            (-> [a : A]
-                (El*-Canonical ind (d (inl A (El-Arity child t) a))))
-            (child-ih t
-              (λ i (d (inr A (El-Arity child t) i)))))))))
-
-(def
   [El*-Canonical-lemma :
     (-> [c : Code]
         [t : (El-Data c)]
         [d : (-> (El-Arity c t) (El* c))]
         (= (Type 0 lzero)
-          (El*-Canonical^ c c t d)
+          (El*-Canonical^ c c t d (λ i (El*-Canonical c (d i))))
           (El*-Canonical c (w t d))))]
-  (λ c t d ?))
+  (λ c t d Refl))
 
-#|
 (def [mk-El : (-> [c : Code] (mk-El-Type c))]
   (λ ind
     ((ind-Code lzero
@@ -341,43 +349,111 @@
            (->
              (Σ
                [t : (El-Data c)]
-               [d : (-> (El-Arity c t) (El ind))]
-               (El*-Canonical c (w t d)))
+               [d : (-> (El-Arity c t) (El* ind))]
+               (El*-Canonical^ ind c t d (λ i (El*-Canonical ind (d i)))))
              (El ind))
            (mk-El-Type^ ind c)))
-       (λ k (k (cons () (nil*-data ind))))
+       (λ k (k (cons () (cons (nil*-data ind) Refl))))
        (λ A children ih k
-         (λ a (ih a (λ f (k (cons (cons a (first f)) (second f)))))))
+         (λ a (ih a (λ f (k (cons (cons a (first f)) (cons (first (second f)) (second (second f)))))))))
        (λ A child ih k
          (λ children
            (ih
              (λ f
                (k
                  (cons (first f)
-                   (ind-Or lzero A (El-Arity child (first f))
-                     (λ I (El ind))
-                     children
-                     (second f)))))))))
-      ind (λ f (w (first f) (second f))))))
+                   (cons
+                     (ind-Or lzero A (El-Arity child (first f))
+                       (λ I (El* ind))
+                       (λ i (first (children i)))
+                       (first (second f)))
+                     (cons
+                       (λ i (second (children i)))
+                       (second (second f)))))))))))
+      ind (λ f (cons (w (first f) (first (second f))) (second (second f)))))))
+
+(def
+  [ind-El-case-Type^ :
+    (-> [l : (Level 0)]
+        [ind : Code]
+        [c : Code]
+        [m : (-> (El ind) (Type 0 l))]
+        [k : (mk-El-Type^ ind c)]
+        (Type 0 l))]
+  (λ l ind c m k
+    ((ind-Code (lsucc l)
+       (λ c
+         (-> [m : (-> (El ind) (Type 0 l))]
+             [k : (mk-El-Type^ ind c)]
+             (Type 0 l)))
+       (λ m k (m k))
+       (λ A children ih m k
+         (-> [a : A] (ih a m (k a))))
+       (λ A child ih m k 
+         (-> [d : (-> A (El ind))]
+             (-> [a : A] (m (d a)))
+             (ih m (k d)))))
+      c m k)))
+
+(def
+  [ind-El-case-Type :
+    (-> [l : (Level 0)]
+        [ind : Code]
+        [m : (-> (El ind) (Type 0 l))]
+        (Type 0 l))]
+  (λ l ind m (ind-El-case-Type^ l ind ind m (mk-El ind))))
+
+(def
+  [ind-El :
+    (-> [ind : Code]
+        [l : (Level 0)]
+        [m : (-> (El ind) (Type 0 l))]
+        (ind-El-case-Type l ind m)
+        [t : (El ind)]
+        (m t))]
+  (λ ind l m case t
+    ((ind-W l (first t)
+       (λ el*
+         (-> [el*-canon : (El*-Canonical ind el*)]
+             (ind-El-case-Type l ind m)
+             (m (cons el* el*-canon))))
+       (ind-Code l
+         (λ c
+           (-> [tag : (El-Data c)]
+               [data : (-> (El-Arity c tag) (El* ind))]
+               [ih :
+                 (-> [a : (El-Arity c tag)]
+                     [a-canon : (El*-Canonical ind (data a))]
+                     (ind-El-case-Type l ind m)
+                     (m (cons (data a) a-canon)))]
+               [el*-canon :
+                 (El*-Canonical^ ind c tag data (λ i (El*-Canonical ind (data i))))]
+               ?))
+         ?
+         ?
+         ?))
+      (second t) case)))
+
 
 #|
 data Nat = Z | Succ (Unit -> Nat)
 |#
 
-(def [Nat*-Code : Code]
+#|
+(def [Nat-Code : Code]
   (nonind Bool (λ b
     (ind-Bool (lsucc lzero) b
       (λ _ Code)
       nil
       (ind Unit nil)))))
 
-(def [Nat* : (Type 0 lzero)] (El Nat*-Code))
+(def [Nat : (Type 0 lzero)] (El Nat-Code))
 
-(def [z* : Nat*]
-  (mk-El Nat*-Code true))
+(def [z : Nat]
+  (mk-El Nat-Code true))
 
-(def [s* : (-> Nat* Nat*)]
-  (λ n (mk-El Nat*-Code false (λ _ n))))
+(def [s : (-> Nat Nat)]
+  (λ n (mk-El Nat-Code false (λ _ n))))
 
-(def [four* : Nat*] (s* (s* (s* (s* z*)))))
+(def [four : Nat] (s (s (s (s z)))))
 |#
