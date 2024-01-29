@@ -341,6 +341,19 @@
           (El*-Canonical c (w t d))))]
   (λ c t d Refl))
 
+(def
+  [mk-El^ :
+    (-> [ind : Code]
+        [c : Code]
+        [k :
+          (-> [tag : (El-Data c)]
+              [data : (-> (El-Arity c tag) (El* ind))]
+              [canon :
+                (El*-Canonical^ ind c tag data
+                  (λ i (El*-Canonical ind (data i))))]
+              (El ind))]
+        (mk-El-Type^ ind c))]
+
 (def [mk-El : (-> [c : Code] (mk-El-Type c))]
   (λ ind
     ((ind-Code lzero
@@ -404,6 +417,62 @@
   (λ l ind m (ind-El-case-Type^ l ind ind m (mk-El ind))))
 
 (def
+  [app-mk-El :
+    (-> [ind : Code]
+        [c : Code]
+        [k : (mk-El-Type^ ind c)]
+        [tag : (El-Data c)]
+        [data : (-> (El-Arity c tag) (El* ind))]
+        [canon :
+          (El*-Canonical^ ind c tag data
+            (λ i (El*-Canonical ind (data i))))]
+        (El ind))]
+  (λ ind
+    (ind-Code lzero
+      (λ c
+        (-> [k : (mk-El-Type^ ind c)]
+            [tag : (El-Data c)]
+            [data : (-> (El-Arity c tag) (El* ind))]
+            [canon :
+              (El*-Canonical^ ind c tag data
+                (λ i (El*-Canonical ind (data i))))]
+            (El ind)))
+      (λ k tag data canon k)
+      (λ A children ih k tag data canon
+        (ih
+          (first tag)
+          (k (first tag))
+          (second tag)
+          data 
+          canon))
+      (λ A child ih k tag data canon
+        (ih
+          (k (λ i (cons (data (inl A (El-Arity child tag) i)) ((first canon) i))))
+          tag
+          (λ i (data (inr A (El-Arity child tag) i)))
+          (second canon))))))
+
+(def
+  [app-mk-El-lemma :
+    (-> [ind : Code]
+        [tag : (El-Data ind)]
+        [data : (-> (El-Arity ind tag) (El* ind))]
+        [canon : (El*-Canonical ind (w tag data))]
+        (= (El ind)
+          (cons (w tag data) canon)
+          (app-mk-El ind ind (mk-El ind) tag data canon)))]
+  (λ ind
+    (ind-Code lzero
+      (λ c
+        (-> [tag : (El-Data c)]
+            [data : (-> (El-Arity c tag) (El* ind))]
+            [canon :
+              (El*-Canonical^ ind c tag data
+                (λ i (El*-Canonical ind (data i))))]
+            (= (El ind)
+
+#;
+(def
   [ind-El :
     (-> [ind : Code]
         [l : (Level 0)]
@@ -417,21 +486,26 @@
          (-> [el*-canon : (El*-Canonical ind el*)]
              (ind-El-case-Type l ind m)
              (m (cons el* el*-canon))))
-       (ind-Code l
-         (λ c
-           (-> [tag : (El-Data c)]
-               [data : (-> (El-Arity c tag) (El* ind))]
-               [ih :
-                 (-> [a : (El-Arity c tag)]
-                     [a-canon : (El*-Canonical ind (data a))]
-                     (ind-El-case-Type l ind m)
-                     (m (cons (data a) a-canon)))]
-               [el*-canon :
-                 (El*-Canonical^ ind c tag data (λ i (El*-Canonical ind (data i))))]
-               ?))
-         ?
-         ?
-         ?))
+       (λ ind-tag ind-data ind-ih ind-canon
+         ((ind-Code l
+            (λ c
+              (-> [k : (mk-El-Type^ ind c)]
+                  [tag : (El-Data c)]
+                  [data : (-> (El-Arity c tag) (El* ind))]
+                  [ih :
+                    (-> [a : (El-Arity c tag)]
+                        [a-canon : (El*-Canonical ind (data a))]
+                        (ind-El-case-Type l ind m)
+                        (m (cons (data a) a-canon)))]
+                  [el*-canon :
+                    (El*-Canonical^ ind c tag data
+                      (λ i (El*-Canonical ind (data i))))]
+                  [case : (ind-El-case-Type^ l ind c m k)]
+                  (m (cons (w ind-tag ind-data) ind-canon))))
+            (λ k tag data ih canon case ?)
+            ?
+            ?)
+           ? ind-tag ind-data ind-ih ind-canon)))
       (second t) case)))
 
 
