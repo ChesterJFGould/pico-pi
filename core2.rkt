@@ -412,6 +412,56 @@
     [(NFirst e) (First (quote/neutral e))]
     [(NSecond e) (Second (quote/neutral e))]))
 
+(: quote/value/norm (-> Value TypedExpr))
+(define (quote/value/norm v)
+  (match v
+    [(VChoice _ v) (quote/value/norm (force v))]
+    [(VNeu n _) (quote/neutral/norm n)]
+    [(VClos env (Lam (TypedBind x x-t) b))
+      (define x^ (gensym x))
+      (define x-t-v (eval/expr env x-t))
+      (Lam (TypedBind x^ (quote/value/norm x-t-v))
+        (quote/value/norm (eval/expr (env-set env x (VNeu (NVar x^) (lazy x-t-v))) b)))]
+    [(VClos env (BindT kind (TypedBind x x-t) b))
+      (define x^ (gensym x))
+      (define x-t-v (eval/expr env x-t))
+      (BindT kind (TypedBind x^ (quote/value/norm x-t-v))
+        (quote/value/norm (eval/expr (env-set env x (VNeu (NVar x^) (lazy x-t-v))) b)))]
+    [(VType y x) (Type y (quote/value/norm x))]
+    [(VLevelT y) (LevelT y)]
+    [(VLZero) (LZero)]
+    [(VLSucc l) (LSucc (quote/value/norm l))]
+    [(VEmptyT) (EmptyT)]
+    [(VUnitT) (UnitT)]
+    [(VUnit) (Unit)]
+    [(VEqT t l r) (EqT (quote/value/norm t) (quote/value/norm l) (quote/value/norm r))]
+    [(VRefl) (Refl)]
+    [(VW t d) (W (quote/value/norm t) (quote/value/norm d))]
+    [(VBoolT) (BoolT)]
+    [(VBool v) (Bool v)]
+    [(VCons f s) (Cons (quote/value/norm f) (quote/value/norm s))]))
+
+(: quote/neutral/norm (-> Neutral TypedExpr))
+(define (quote/neutral/norm n)
+  (match n
+    [(NVar x) (Var x)]
+    [(NApp f a) (App (quote/neutral/norm f) (quote/value/norm a))]
+    [(NIndEmpty l n m)
+      (IndEmpty (quote/value/norm l) (quote/neutral/norm n) (quote/value/norm m))]
+    [(NLMaxL n r) (LMax (quote/neutral/norm n) (quote/value/norm r))]
+    [(NLMaxR l n) (LMax (quote/value/norm l) (quote/neutral/norm n))]
+    [(NIndEq l n m refl)
+      (IndEq (quote/value/norm l) (quote/neutral/norm n) (quote/value/norm m)
+        (quote/value/norm refl))]
+    [(NIndW l n m e)
+      (IndW (quote/value/norm l) (quote/neutral/norm n) (quote/value/norm m)
+        (quote/value/norm e))]
+    [(NIndBool l n m true false)
+      (IndBool (quote/value/norm l) (quote/neutral/norm n) (quote/value/norm m)
+        (quote/value/norm true) (quote/value/norm false))]
+    [(NFirst e) (First (quote/neutral/norm e))]
+    [(NSecond e) (Second (quote/neutral/norm e))]))
+
 ;; Equality
 
 (: value=? (-> Value Value Boolean))
@@ -490,12 +540,28 @@
       (and
         (value=? (do-first a) (do-first b))
         (value=? (do-second a) (do-second b)))]
-    [_ #f]))
+    [(cons a b) (display!= #f a b)]))
+
+(: display!= (-> Boolean Value Value Boolean))
+(define (display!= p a b)
+  (unless p
+    (displayln (unparse/expr (quote/value a)))
+    (displayln '!=)
+    (displayln (unparse/expr (quote/value b))))
+  p)
+
+(: display!=-neu (-> Boolean Neutral Neutral Boolean))
+(define (display!=-neu p a b)
+  (unless p
+    (displayln (unparse/expr (quote/neutral a)))
+    (displayln '!=)
+    (displayln (unparse/expr (quote/neutral b))))
+  p)
 
 (: neutral=? (-> Neutral Neutral Boolean))
 (define (neutral=? a b)
   (match (cons a b)
-    [(cons (NVar x-a) (NVar x-b)) (symbol=? x-a x-b)]
+    [(cons (NVar x-a) (NVar x-b)) (display!=-neu (symbol=? x-a x-b) a b)]
     [(cons (NApp f-a a-a) (NApp f-b a-b))
       (and (neutral=? f-a f-b) (value=? a-a a-b))]
     [(cons (NIndEmpty _ t-a _) (NIndEmpty _ t-b _)) (neutral=? t-a t-b)]
@@ -514,7 +580,7 @@
         (value=? false-a false-b))]
     [(cons (NFirst e-a) (NFirst e-b)) (neutral=? e-a e-b)]
     [(cons (NSecond e-a) (NSecond e-b)) (neutral=? e-a e-b)]
-    [_ #f]))
+    [(cons a b) (display!=-neu #f a b)]))
 
 (: irrelevant? (-> Value Boolean))
 (define (irrelevant? v)
@@ -914,13 +980,19 @@
     [(< y-a y-b) (VType y-b x-b)]
     [else (VType y-a (do-lmax x-a x-b))]))
 
+(: unparse/app (-> AstExpr (Listof Any)))
+(define (unparse/app f)
+  (match f
+    [(App f a) `(,@(unparse/app f) ,(unparse/expr a))]
+    [_ `(,(unparse/expr f))]))
+
 (: unparse/expr (-> AstExpr Any))
 (define (unparse/expr e)
   (match e
     [(Var x) x]
     [(Ann v t) `(,(unparse/expr v) : ,(unparse/expr t))]
     [(Lam x b) `(λ ,(unparse/bind x) ,(unparse/expr b))]
-    [(App f a) `(,(unparse/expr f) ,(unparse/expr a))]
+    [(App f a) `(,@(unparse/app f) ,(unparse/expr a))]
     [(BindT k x b)
       `(,(unparse/bind-kind k) ,(unparse/bind x) ,(unparse/expr b))]
     [(Type y x) `(Type ,y ,(unparse/expr x))]
