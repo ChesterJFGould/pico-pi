@@ -29,11 +29,12 @@
       right) (second t))))
 
 (def [Code-Tag : (Type 0 lzero)]
-  (Or Bool Unit))
+  (Or Bool Bool))
 
-(def [Code-nil-tag : Code-Tag] (inl Bool Unit true))
-(def [Code-nonind-tag : Code-Tag] (inl Bool Unit false))
-(def [Code-ind-tag : Code-Tag] (inr Bool Unit ()))
+(def [Code-nil-tag : Code-Tag] (inl Bool Bool true))
+(def [Code-nonind-tag : Code-Tag] (inl Bool Bool false))
+(def [Code-ind-tag : Code-Tag] (inr Bool Bool true))
+(def [Code-choice-tag : Code-Tag] (inr Bool Bool false))
 
 (def
   [ind-Code-Tag :
@@ -42,28 +43,37 @@
         [nil : (m Code-nil-tag)]
         [nonind : (m Code-nonind-tag)]
         [ind : (m Code-ind-tag)]
+        [choice : (m Code-choice-tag)]
         [t : Code-Tag]
         (m t))]
-  (λ l m nil nonind ind
-    (ind-Or l Bool Unit
+  (λ l m nil nonind ind choice
+    (ind-Or l Bool Bool
       m
       (λ tag
         (ind-Bool l tag
-          (λ tag (m (inl Bool Unit tag)))
+          (λ tag (m (inl Bool Bool tag)))
           nil
           nonind))
-      (λ _ ind))))
+      (λ tag
+        (ind-Bool l tag
+          (λ tag (m (inr Bool Bool tag)))
+          ind
+          choice)))))
 
 (def [Code-Data : (-> Code-Tag (Type 0 (lsucc lzero)))]
   (ind-Code-Tag (lsucc (lsucc lzero)) (λ _ (Type 0 (lsucc lzero)))
     Unit
     (Type 0 lzero)
-    (Type 0 lzero))) (def [Code-Arity : (-> [t : Code-Tag] (Code-Data t) (Type 0 lzero))]
+    (Type 0 lzero)
+    Unit))
+    
+(def [Code-Arity : (-> [t : Code-Tag] (Code-Data t) (Type 0 lzero))]
   (ind-Code-Tag (lsucc lzero)
     (λ t (-> (Code-Data t) (Type 0 lzero)))
     (λ _ Empty)
     (λ A A)
-    (λ _ Unit)))
+    (λ _ Unit)
+    (λ _ Bool)))
 
 (def [Code* : (Type 0 (lsucc lzero))]
   (W [t : (Σ [t : Code-Tag] (Code-Data t))]
@@ -83,6 +93,15 @@
   (λ A child
     (w (cons Code-ind-tag A) (λ _ child))))
 
+(def [choice* : (-> Code* Code* Code*)]
+  (λ l r
+    (w (cons Code-choice-tag ())
+      (λ b
+        (ind-Bool (lsucc lzero) b
+          (λ _ Code*)
+          l
+          r)))))
+
 (def [Code*-Canonical : (-> Code* (Type 0 (lsucc lzero)))]
   (λ c
     (ind-W (lsucc (lsucc lzero)) c
@@ -96,7 +115,24 @@
                 (Type 0 (lsucc lzero))))
             (λ _ data ih (= (-> Empty Code*) Code-nil-data data))
             (λ A data ih (-> [a : A] (ih a)))
-            (λ A data ih (ih ())))
+            (λ A data ih (ih ()))
+            (λ _ data ih
+              (Σ
+                [canon : (-> [b : Bool] (ih b))]
+                (= (-> Bool Code*)
+                  (λ b
+                    (ind-Bool (lsucc lzero) b
+                      (λ _ Code*)
+                      (data true)
+                      (data false)))
+                  data)
+                (= (-> [b : Bool] (ih b))
+                  (λ b
+                    (ind-Bool (lsucc lzero) b
+                      (λ b (ih b))
+                      (canon true)
+                      (canon false)))
+                  canon))))
           (first tag) (second tag))))))
 
 (def [Code : (Type 0 (lsucc lzero))]
@@ -115,6 +151,137 @@
    (λ A child
      (cons (ind* A (first child)) (second child))))
 
+(def [choice : (-> Code Code Code)]
+  (λ l r
+    (cons
+      (choice* (first l) (first r))
+      (cons
+        (λ b
+          (ind-Bool (lsucc lzero) b
+            (λ b
+              (Code*-Canonical
+                (ind-Bool (lsucc lzero) b
+                  (λ _ Code*)
+                  (first l)
+                  (first r))))
+            (second l)
+            (second r)))
+        (cons
+          Refl
+          Refl)))))
+
+(def
+  [choice-lemma :
+    (->
+      [data : (-> Bool Code*)]
+      [canon : (Code*-Canonical (w (cons Code-choice-tag ()) data))]
+      (= Code
+        (choice
+          (cons (data true) ((first canon) true))
+          (cons (data false) ((first canon) false)))
+        (cons
+          (w (cons Code-choice-tag ()) data)
+          canon)))]
+  (λ data canon
+    ((ind-= (lsucc lzero) (first (second canon))
+       (λ data^ prf
+         (->
+           [canon : (Code*-Canonical (w (cons Code-choice-tag ()) data^))]
+           [data-eq : (= (-> Bool Code*) data data^)]
+           (= Code
+             (choice
+               (cons (data^ true) ((first canon) true))
+               (cons (data^ false) ((first canon) false)))
+             (cons
+               (w (cons Code-choice-tag ()) data^)
+               (cons
+                 (first canon)
+                 (cons
+                   (ind-= (lsucc lzero) data-eq
+                     (λ data^^ _
+                       (= (-> Bool Code*)
+                         (λ b
+                           (ind-Bool (lsucc lzero) b
+                             (λ _ Code*)
+                             (data^^ true)
+                             (data^^ false)))
+                         data^))
+                     prf)
+                   (second (second canon))))))))
+       (λ canon data-eq
+         (ind-= (lsucc lzero) data-eq
+           (λ _ prf
+             (= Code
+               (choice
+                 (cons (data true) ((first canon) true))
+                 (cons (data false) ((first canon) false)))
+               (cons
+                 (w
+                   (cons Code-choice-tag ())
+                   (λ b
+                     (ind-Bool (lsucc lzero) b
+                       (λ _ Code*)
+                       (data true)
+                       (data false))))
+                 (cons (first canon) (cons Refl (second (second canon)))))))
+           ((ind-= (lsucc lzero) (second (second canon))
+              (λ data-canon prf
+                (->
+                  [data-eq :
+                    (=
+                      (->
+                        [b : Bool]
+                        (Code*-Canonical
+                          (ind-Bool (lsucc lzero) b
+                            (λ _ Code*)
+                            (data true)
+                            (data false))))
+                      (first canon)
+                      data-canon)]
+                  (= Code
+                    (choice
+                      (cons (data true) (data-canon true))
+                      (cons (data false) (data-canon false)))
+                    (cons
+                      (w
+                        (cons Code-choice-tag ())
+                        (λ b
+                          (ind-Bool (lsucc lzero) b
+                            (λ _ Code*)
+                            (data true)
+                            (data false))))
+                      (cons
+                        data-canon
+                        (cons
+                          Refl
+                          (ind-= (lsucc lzero) data-eq
+                            (λ data-canon^ _
+                              (=
+                                (->
+                                  [b : Bool]
+                                  (Code*-Canonical
+                                    (ind-Bool (lsucc lzero) b
+                                      (λ _ Code*)
+                                      (data true)
+                                      (data false))))
+                                (λ b
+                                  (ind-Bool (lsucc lzero) b
+                                    (λ b
+                                      (Code*-Canonical
+                                        (ind-Bool (lsucc lzero) b
+                                          (λ _ Code*)
+                                          (data true)
+                                          (data false))))
+                                    (data-canon^ true)
+                                    (data-canon^ false)))
+                                data-canon))
+                            prf)))))))
+              ;; One more ind-=?
+              (λ data-eq Refl))
+             Refl))))
+      canon)))
+
+#;
 (def
   [ind-Code : 
     (-> [l : (Level 0)]
@@ -130,9 +297,16 @@
               [child : Code]
               (m child)
               (m (ind A child)))]
+        [choice :
+          (->
+            [l : Code]
+            [r : Code]
+            (m l)
+            (m r)
+            (m (choice l r)))]
         [t : Code]
         (m t))]
-  (λ l m nil nonind ind t
+  (λ l m nil nonind ind choice t
     ((ind-W (lmax (lsucc lzero) l) (first t)
        (λ code* (-> [canon : (Code*-Canonical code*)] (m (cons code* canon))))
        (λ tag
@@ -155,10 +329,17 @@
                 (λ a (cons (data a) (canon a)))
                 (λ a (ih a (canon a)))))
             (λ A data ih canon
-              (ind A (cons (data ()) canon) (ih () canon))))
+              (ind A (cons (data ()) canon) (ih () canon)))
+            (λ _ data ih canon
+              (choice
+                (cons (data true) (canon true))
+                (cons (data false) (canon false))
+                (ih true (canon true))
+                (ih false (canon false)))))
            (first tag) (second tag))))
       (second t))))
 
+#|
 (def [El-Data : (-> Code (Type 0 lzero))]
   (ind-Code (lsucc lzero)
     (λ _ (Type 0 lzero))
@@ -706,9 +887,8 @@ data Nat = Z | Succ (Unit -> Nat)
 
 (def [four : Nat] (add1 (add1 (add1 (add1 zero)))))
 
-(def c (nonind Bool (λ b (ind-Bool (lsucc lzero) b (λ _ Code) nil nil))))
-
 ;; Commuting conversions LOL
+#;
 (def
   [Nat-case-Type-lemma :
     (->
@@ -767,3 +947,4 @@ data Nat = Z | Succ (Unit -> Nat)
             Nat)))
       zero
       (λ n ih (add1 (ih ()))))))
+|#
