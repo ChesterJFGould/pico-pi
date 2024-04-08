@@ -12,6 +12,7 @@
     [(Var x) (hash-ref env x)]
     [(Ann e _) (embed env e)]
     [(Lam (TypedBind x _) b) (λ (val) (embed (hash-set env x val) b))]
+    [(Let (TypedBind x _) v b) (embed (hash-set env x (embed env v)) b)]
     [(App f a) ((embed env f) (embed env a))]
     [(BindT _ _ _) (void)]
     [(Type _ _) (void)]
@@ -44,4 +45,6 @@
         (embed env false))]
     [(Cons fst snd) (cons (embed env fst) (embed env snd))]
     [(First p) (car (embed env p))]
-    [(Second p) (cdr (embed env p))]))
+    [(Second p) (cdr (embed env p))]
+    [(StringLit s) s]
+    [(StringT) (void)]))

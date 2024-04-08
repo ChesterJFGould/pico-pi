@@ -5,7 +5,8 @@
 (define-type (Expr b r)
   (U Var (Ann r) (Lam b r) (App r) (BindT r) (Type r) LevelT LZero (LSucc r)
     (LMax r) EmptyT (IndEmpty r) UnitT Unit (EqT r) Refl (IndEq r) (W r)
-    (IndW r) BoolT Bool (IndBool r) (Cons r) (First r) (Second r) TODO))
+    (IndW r) BoolT Bool (IndBool r) (Cons r) (First r) (Second r) (Let b r)
+    StringLit StringT TODO))
 (struct Var ([name : Symbol]))
 (struct (r) Ann ([val : r] [type : r]))
 (struct (b r) Lam ([x : b] [body : r]))
@@ -31,6 +32,9 @@
 (struct (r) Cons ([fst : r] [snd : r]))
 (struct (r) First ([val : r]))
 (struct (r) Second ([val : r]))
+(struct (b r) Let ([name : b] [val : r] [body : r]))
+(struct StringLit ([v : String]))
+(struct StringT ())
 (struct TODO ())
 
 (define-type BindKind (U 'Pi 'Sigma 'W))
@@ -45,7 +49,7 @@
 
 (define-type Value
   (U VChoice VNeu VClos VType VLevelT VLZero VLSucc VEmptyT VUnitT VUnit VEqT
-    VRefl VW VBoolT VBool VCons))
+    VRefl VW VBoolT VBool VCons VStringLit VStringT))
 (struct VChoice ([neu : (Promise Value)] [val : (Promise Value)]))
 (struct VNeu ([neu : Neutral] [type : (Promise Value)]))
 (struct VClos ([env : VEnv] [expr : TypedExpr]))
@@ -62,6 +66,8 @@
 (struct VBoolT ())
 (struct VBool ([val : Boolean]))
 (struct VCons ([fst : Value] [snd : Value]))
+(struct VStringLit ([v : String]))
+(struct VStringT ())
 
 (define-type Neutral
   (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW NIndBool NFirst NSecond))
@@ -118,6 +124,8 @@
     [`Bool (BoolT)]
     [`true (Bool #t)]
     [`false (Bool #f)]
+    [`String (StringT)]
+    [(? string? s) (StringLit s)]
     ['? (TODO)]
     [(? symbol?) (parse/variable e)]
     [`(,e : ,t) (Ann (parse/expr e) (parse/expr t))]
@@ -159,6 +167,14 @@
     [`(cons ,f ,s) (Cons (parse/expr f) (parse/expr s))]
     [`(first ,p) (First (parse/expr p))]
     [`(second ,p) (Second (parse/expr p))]
+    [`(let (,xs ,vs) ... ,b)
+      ((foldr
+         (λ ([b : AstBind] [e : (-> (Listof AstExpr) AstExpr)])
+           (λ ([vs : (Listof AstExpr)])
+             (ann (Let b (car vs) (e (cdr vs))) AstExpr)))
+         (λ ([vs : (Listof AstExpr)]) (parse/expr b))
+         (map parse/bind xs))
+       (map parse/expr vs))]
     [`(,f ,a ,as ...)
       (foldl
         (λ ([a : AstExpr] [f : AstExpr]) (App f a))
@@ -171,7 +187,7 @@
   (not
     (member v '(λ lam Π Pi -> : Empty ind-Empty Unit lzero lsucc lmax Level Type
       W w ind-W = ind-= Refl true false Bool ind-Bool Σ Sigma cons first second
-      ?))))
+      ? String let))))
 
 (: parse/variable (-> Symbol AstExpr))
 (define (parse/variable x)
@@ -200,6 +216,8 @@
     [(Var x) (env-get env x)]
     [(Ann v _) (eval/expr env v)]
     [(Lam _ _) (VClos env e)]
+    [(Let (TypedBind x _) v b)
+      (eval/expr (env-set env x (eval/expr env v)) b)]
     [(App f a) (do-app (eval/expr env f) (eval/expr env a))]
     [(BindT _ _ _) (VClos env e)]
     [(Type y x) (VType y (eval/expr env x))]
@@ -228,7 +246,9 @@
         (eval/expr env true) (eval/expr env false))]
     [(Cons f s) (VCons (eval/expr env f) (eval/expr env s))]
     [(First e) (do-first (eval/expr env e))]
-    [(Second e) (do-second (eval/expr env e))]))
+    [(Second e) (do-second (eval/expr env e))]
+    [(StringLit s) (VStringLit s)]
+    [(StringT) (VStringT)]))
 
 (: whnf (-> Value Value))
 (define (whnf v)
@@ -389,7 +409,9 @@
     [(VW t d) (W (quote/value t) (quote/value d))]
     [(VBoolT) (BoolT)]
     [(VBool v) (Bool v)]
-    [(VCons f s) (Cons (quote/value f) (quote/value s))]))
+    [(VCons f s) (Cons (quote/value f) (quote/value s))]
+    [(VStringLit s) (StringLit s)]
+    [(VStringT) (StringT)]))
 
 (: quote/neutral (-> Neutral TypedExpr))
 (define (quote/neutral n)
@@ -540,6 +562,8 @@
       (and
         (value=? (do-first a) (do-first b))
         (value=? (do-second a) (do-second b)))]
+    [(cons (VStringLit a) (VStringLit b)) (string=? a b)]
+    [(cons (VStringT) (VStringT)) #t]
     [(cons a b) (display!= #f a b)]))
 
 (: display!= (-> Boolean Value Value Boolean))
@@ -628,6 +652,32 @@
         (values (Lam (TypedBind x-n^ x-t) b^)
           (VClos venv
             (BindT 'Pi (TypedBind x-n^ x-t) (quote/value b-t)))))]
+    [(Let x v b)
+      (let*-values
+        ([(x-n v^ x-t x-t-v) (check/bind-expr tenv venv x v)]
+         [(x-n^) (gensym x-n)]
+         [(tenv-b)
+          (env-set* tenv
+            (list x-n x-n^)
+            (list (cons x-n^ x-t-v) (cons x-n^ x-t-v)))]
+         [(v-v) (eval/expr venv v^)]
+         [(x-v)
+           (VChoice
+             (delay (VNeu (NVar x-n^) (delay x-t-v)))
+             (delay v-v))]
+         [(venv-b)
+          (env-set* venv
+            (list x-n x-n^)
+            (list x-v x-v))]
+         [(b^ b-t) (synth/expr tenv-b venv-b b)]
+         [(venv-b-closed)
+          (env-set* venv
+            (list x-n x-n^)
+            (list v-v v-v))]
+         [(b-t-closed) (eval/expr venv-b-closed (quote/value b-t))])
+        (values
+          (Let (TypedBind x-n^ x-t) v^ b^)
+          b-t-closed))]
     [(App f a)
       (match-let*-values
         ([(f^ (app whnf (VClos venv-b (BindT 'Pi (TypedBind x x-t) b))))
@@ -770,6 +820,8 @@
          [(e-v) (eval/expr venv e^)]
          [(s-t) (eval/expr (env-set env-e f-n (do-first e-v)) s)])
         (values (Second e^) s-t))]
+    [(StringLit s) (values (StringLit s) (VStringT))]
+    [(StringT) (values (StringT) (VType 0 (VLZero)))]
     [(TODO)
       (error 'synth/expr
         (string-join
@@ -780,7 +832,8 @@
                 (format "~a : ~a" x (unparse/expr (quote/value (cdr p)))))
               (Listof String))
             (list "--------------------" "?"))
-          "\n"))]))
+          "\n"))]
+    [e (error 'synth/expr "Cannot synthesize type for `~a`" (unparse/expr e))]))
 
 (: synth/bind (-> TEnv VEnv AstBind (values Symbol TypedExpr Natural Value)))
 (define (synth/bind tenv venv b)
@@ -868,6 +921,25 @@
         ;; TODO: This quote doesn't make a lot of sense
         (Lam (TypedBind x-n^ (quote/value x-t-t-v)) b^))]
     [(cons (Lam _ _) _) (check-mismatch e e-t)]
+    [(cons (Let x v b) t)
+      (let*-values
+        ([(x-n v^ x-t x-t-v) (check/bind-expr tenv venv x v)]
+         [(x-n^) (gensym x-n)]
+         [(tenv-b)
+          (env-set* tenv
+            (list x-n x-n^)
+            (list (cons x-n^ x-t-v) (cons x-n^ x-t-v)))]
+         [(v-v) (eval/expr venv v^)]
+         [(x-v)
+           (VChoice
+             (delay (VNeu (NVar x-n^) (delay x-t-v)))
+             (delay v-v))]
+         [(venv-b)
+          (env-set* venv
+            (list x-n x-n^)
+            (list x-v x-v))]
+         [(b^) (check/expr tenv-b venv-b b t)])
+         (Let (TypedBind x-n^ x-t) v^ b^))]
     [(cons (LevelT y) (VType y-t x-t)) #:when (= (add1 y) y-t) (LevelT y)]
     [(cons (LevelT _) _) (check-mismatch e e-t)]
     [(cons (LZero) (VLevelT _)) (LZero)]
@@ -918,6 +990,10 @@
          [(s^) (check/expr tenv venv s s-t-v)])
         (Cons f^ s^))]
     [(cons (Cons _ _) _) (check-mismatch e e-t)]
+    [(cons (StringLit s) (VStringT)) (StringLit s)]
+    [(cons (StringLit _) _) (check-mismatch e e-t)]
+    [(cons (StringT) (VType _ _)) (StringT)]
+    [(cons (StringT) _) (check-mismatch e e-t)]
     [(cons (TODO) _)
       (error 'check/expr
         (string-join
@@ -1017,6 +1093,9 @@
     [(Cons f s) `(cons ,(unparse/expr f) ,(unparse/expr s))]
     [(First e) `(first ,(unparse/expr e))]
     [(Second e) `(second ,(unparse/expr e))]
+    [(Let x v b) `(let ,(unparse/bind x) ,(unparse/expr v) ,(unparse/expr b))]
+    [(StringLit s) s]
+    [(StringT) 'String]
     [(TODO) '?]))
 
 

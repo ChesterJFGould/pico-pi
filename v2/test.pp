@@ -1,4 +1,4 @@
-(def [id : (Π [A : (Type 1)] (Π (_ : A) A))]
-  (λ [A : (Type 1)] (λ (a : A) a)))
-
-(id (Type 0))
+(dict-add Symbol String
+  (dict-empty Symbol String)
+  (String->Symbol "Hello")
+  "JSON")

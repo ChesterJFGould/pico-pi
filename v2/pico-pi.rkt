@@ -5,6 +5,7 @@
 (require
   "core2.rkt"
   "embed.rkt"
+  "prims.rkt"
   racket/pretty)
 
 #; 
@@ -25,6 +26,7 @@
     [`(def ,var ,val) (Def (parse/bind var) (parse/expr val))]
     [else (RExpr (parse/expr r))]))
 
+#|
 ; (: def-tenv TEnv)
 (define def-tenv
   (env-set* (empty-env) ; (ann (empty-env) TEnv)
@@ -48,6 +50,16 @@
   (env-set* (empty-env)
     '(Nat zero add1)
     (list (void) 0 add1)))
+|#
+(define envs
+  (add-prims (empty-env) (empty-env) (empty-env)
+    (list
+      (list 'Nat '(Type 0 lzero) (void))
+      (list 'zero 'Nat 0)
+      (list 'add1 '(-> Nat Nat) add1))))
+(define def-tenv (car envs))
+(define def-venv (cadr envs))
+(define def-eenv (caddr envs))
 
 ; (: repl (-> Void))
 (define (repl)
