@@ -29,16 +29,31 @@
       (list 'dict-empty '(-> [K : (Type 0 lzero)] [V : (Type 0 lzero)] (Dict K V)) (λ (K) (λ (V) (hash))))
       (list 'dict-add '(-> [K : (Type 0 lzero)] [V : (Type 0 lzero)] (Dict K V) K V (Dict K V)) hash-set-curried)
       (list 'Symbol '(Type 0 lzero) (void))
-      (list 'String->Symbol '(-> String Symbol) string->symbol))))
-(define top-type '(Dict Symbol String))
+      (list 'String->Symbol '(-> String Symbol) string->symbol)
+      (list 'JSON '(Type 0 lzero) (void))
+      (list 'Dict->JSON '(-> (Dict Symbol JSON) JSON) (λ (d) d))
+      (list 'String->JSON '(-> String JSON) (λ (s) s))
+      (list 'List->JSON '(-> (List JSON) JSON) (λ (s) s))
+      (list 'So '(-> Bool (Type 0 lzero)) (λ (s) (void)))
+      (list 'Oh '(So true) (void))
+      (list 'SuchThat '(-> [A : (Type 0 lzero)] (-> A (Type 0 lzero)) (Type 0 lzero)) (λ (A) (λ (F) (void))))
+      (list 'An '(-> [A : (Type 0 lzero)] [F : (-> A (Type 0 lzero))] [a : A] (F a) (SuchThat A F)) (λ (A) (λ (F) (λ (a) (λ (prf) a))))))))
 
 (with-handlers
   ([exn:fail? (λ (e) (displayln (exn-message e)))])
   (let*-values
     ([(prog) (read-all (current-input-port))]
      [(e) (parse/top prog)]
+     #;
      [(e-t) (parse-check-eval/type tenv venv top-type)]
-     [(e^) (check/expr tenv venv e e-t)]
+     [(e^ e-t) (synth/expr tenv venv e)]
      [(e-e) (embed eenv e^)])
-    (write-json e-e)
-    (displayln "")))
+    #;
+    (displayln (embed eenv e^))
+    (if (jsexpr? e-e)
+      (begin
+        (write-json (embed eenv e^))
+        (displayln ""))
+      (error 'top-level "Cannot convert `~a` of type `~a` into JSON"
+        (unparse/expr e)
+        (unparse/texpr (quote/value e-t))))))

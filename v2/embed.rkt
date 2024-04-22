@@ -43,8 +43,13 @@
       (if (embed env t)
         (embed env true)
         (embed env false))]
-    [(Cons fst snd) (cons (embed env fst) (embed env snd))]
+    [(Cons fst snd) (list (embed env fst) (embed env snd))]
     [(First p) (car (embed env p))]
-    [(Second p) (cdr (embed env p))]
+    [(Second p) (cadr (embed env p))]
     [(StringLit s) s]
-    [(StringT) (void)]))
+    [(StringT) (void)]
+    [(RecordLit fields)
+      (hash-map/copy fields
+        (λ (k v) (values k (embed env v))))]
+    [(RecordT _) (void)]
+    [(RecordProj e field) (hash-ref (embed env e) field)]))

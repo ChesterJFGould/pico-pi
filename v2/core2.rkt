@@ -6,7 +6,7 @@
   (U Var (Ann r) (Lam b r) (App r) (BindT r) (Type r) LevelT LZero (LSucc r)
     (LMax r) EmptyT (IndEmpty r) UnitT Unit (EqT r) Refl (IndEq r) (W r)
     (IndW r) BoolT Bool (IndBool r) (Cons r) (First r) (Second r) (Let b r)
-    StringLit StringT TODO))
+    StringLit StringT (RecordLit r) (RecordProj r) (RecordT r) TODO))
 (struct Var ([name : Symbol]))
 (struct (r) Ann ([val : r] [type : r]))
 (struct (b r) Lam ([x : b] [body : r]))
@@ -36,7 +36,11 @@
 (struct StringLit ([v : String]))
 (struct StringT ())
 (struct TODO ())
+(struct (r) RecordLit ([fields : (Rec r)]))
+(struct (r) RecordProj ([rec : r] [field : Symbol]))
+(struct (r) RecordT ([fields : (Rec r)]))
 
+(define-type (Rec v) (HashTable Symbol v))
 (define-type BindKind (U 'Pi 'Sigma 'W))
 (struct (r) TypedBind ([x : Symbol] [type : r]))
 (struct UntypedBind ([name : Symbol]))
@@ -49,7 +53,7 @@
 
 (define-type Value
   (U VChoice VNeu VClos VType VLevelT VLZero VLSucc VEmptyT VUnitT VUnit VEqT
-    VRefl VW VBoolT VBool VCons VStringLit VStringT))
+    VRefl VW VBoolT VBool VCons VStringLit VStringT VRecordLit VRecordT))
 (struct VChoice ([neu : (Promise Value)] [val : (Promise Value)]))
 (struct VNeu ([neu : Neutral] [type : (Promise Value)]))
 (struct VClos ([env : VEnv] [expr : TypedExpr]))
@@ -68,9 +72,12 @@
 (struct VCons ([fst : Value] [snd : Value]))
 (struct VStringLit ([v : String]))
 (struct VStringT ())
+(struct VRecordLit ([fields : (Rec Value)]))
+(struct VRecordT ([fields : (Rec Value)]))
 
 (define-type Neutral
-  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW NIndBool NFirst NSecond))
+  (U NVar NApp NIndEmpty NLMaxL NLMaxR NIndEq NIndW NIndBool NFirst NSecond
+    NRecordProj))
 (struct NVar ([x : Symbol]))
 (struct NApp ([f : Neutral] [a : Value]))
 (struct NIndEmpty ([l : Value] [t : Neutral] [m : Value]))
@@ -82,6 +89,7 @@
   ([l : Value] [t : Neutral] [m : Value] [true : Value] [false : Value]))
 (struct NFirst ([e : Neutral]))
 (struct NSecond ([e : Neutral]))
+(struct NRecordProj ([rec : Neutral] [field : Symbol]))
 
 (define-type (Env a) (HashTable Symbol a))
 (define-type TEnv (Env (Pairof Symbol Value)))
@@ -175,6 +183,28 @@
          (λ ([vs : (Listof AstExpr)]) (parse/expr b))
          (map parse/bind xs))
        (map parse/expr vs))]
+    [`(rec (,(? symbol? field*) ,value*) ...)
+      (RecordLit
+        (foldr
+          (λ ([field : Symbol] [value : AstExpr] [rec : (Rec AstExpr)])
+            (hash-set rec field value))
+          (ann (hash) (Rec AstExpr))
+          (map is-Symbol field*)
+          (map parse/expr value*)))]
+    [`(Rec (,(? symbol? field*) ,value*) ...)
+      (RecordT
+        (foldr
+          (λ ([field : Symbol] [value : AstExpr] [rec : (Rec AstExpr)])
+            (hash-set rec field value))
+          (ann (hash) (Rec AstExpr))
+          (map is-Symbol field*)
+          (map parse/expr value*)))]
+    [`(! ,e ,(? symbol? field*) ..1)
+      (foldl
+        (λ ([field : Symbol] [e : AstExpr])
+          (RecordProj e field))
+        (parse/expr e)
+        (map is-Symbol field*))]
     [`(,f ,a ,as ...)
       (foldl
         (λ ([a : AstExpr] [f : AstExpr]) (App f a))
@@ -187,7 +217,14 @@
   (not
     (member v '(λ lam Π Pi -> : Empty ind-Empty Unit lzero lsucc lmax Level Type
       W w ind-W = ind-= Refl true false Bool ind-Bool Σ Sigma cons first second
-      ? String let))))
+      ? String let rec Rec))))
+
+;; Asserts that s is a symbol
+(: is-Symbol (-> Any Symbol))
+(define (is-Symbol s)
+  (if (symbol? s)
+    s
+    (error 'is-Symbol "Not a symbol: ~a" s)))
 
 (: parse/variable (-> Symbol AstExpr))
 (define (parse/variable x)
@@ -248,7 +285,18 @@
     [(First e) (do-first (eval/expr env e))]
     [(Second e) (do-second (eval/expr env e))]
     [(StringLit s) (VStringLit s)]
-    [(StringT) (VStringT)]))
+    [(StringT) (VStringT)]
+    [(RecordLit fields)
+      (VRecordLit
+        (hash-map/copy
+          fields
+          (λ ([k : Symbol] [v : TypedExpr]) (values k (eval/expr env v)))))]
+    [(RecordT fields)
+      (VRecordT
+        (hash-map/copy
+          fields
+          (λ ([k : Symbol] [v : TypedExpr]) (values k (eval/expr env v)))))]
+    [(RecordProj e field) (do-proj (eval/expr env e) field)]))
 
 (: whnf (-> Value Value))
 (define (whnf v)
@@ -269,6 +317,22 @@
             (eval/expr (env-set env x a) b))))]
     [(VChoice n v)
       (VChoice (lazy (do-app (force n) a)) (lazy (do-app (force v) a)))]))
+
+(: do-proj (-> Value Symbol Value))
+(define (do-proj r field)
+  (match r
+    [(VRecordLit r) (hash-ref r field)]
+    [(VNeu n t)
+      (VNeu
+        (NRecordProj n field)
+        (lazy
+          (match-let*
+            ([(VRecordT t-fields) (whnf (force t))])
+            (hash-ref t-fields field))))]
+    [(VChoice n v)
+      (VChoice
+        (lazy (do-proj (force n) field))
+        (lazy (do-proj (force v) field)))]))
 
 (: do-lmax (-> Value Value Value))
 (define (do-lmax l r)
@@ -411,7 +475,15 @@
     [(VBool v) (Bool v)]
     [(VCons f s) (Cons (quote/value f) (quote/value s))]
     [(VStringLit s) (StringLit s)]
-    [(VStringT) (StringT)]))
+    [(VStringT) (StringT)]
+    [(VRecordLit fields)
+      (RecordLit
+        (hash-map/copy fields
+          (λ ([k : Symbol] [v : Value]) (values k (quote/value v)))))]
+    [(VRecordT fields)
+      (RecordT
+        (hash-map/copy fields
+          (λ ([k : Symbol] [v : Value]) (values k (quote/value v)))))]))
 
 (: quote/neutral (-> Neutral TypedExpr))
 (define (quote/neutral n)
@@ -432,8 +504,10 @@
       (IndBool (quote/value l) (quote/neutral n) (quote/value m)
         (quote/value true) (quote/value false))]
     [(NFirst e) (First (quote/neutral e))]
-    [(NSecond e) (Second (quote/neutral e))]))
+    [(NSecond e) (Second (quote/neutral e))]
+    [(NRecordProj e field) (RecordProj (quote/neutral e) field)]))
 
+#|
 (: quote/value/norm (-> Value TypedExpr))
 (define (quote/value/norm v)
   (match v
@@ -483,6 +557,7 @@
         (quote/value/norm true) (quote/value/norm false))]
     [(NFirst e) (First (quote/neutral/norm e))]
     [(NSecond e) (Second (quote/neutral/norm e))]))
+|#
 
 ;; Equality
 
@@ -564,22 +639,41 @@
         (value=? (do-second a) (do-second b)))]
     [(cons (VStringLit a) (VStringLit b)) (string=? a b)]
     [(cons (VStringT) (VStringT)) #t]
+    [(cons (VRecordLit fields) _)
+      (foldr
+        (λ ([field : Symbol] [res : Boolean])
+          (and res (value=? (do-proj a field) (do-proj b field))))
+        #t
+        (hash-keys fields))]
+    [(cons _ (VRecordLit fields))
+      (foldr
+        (λ ([field : Symbol] [res : Boolean])
+          (and res (value=? (do-proj a field) (do-proj b field))))
+        #t
+        (hash-keys fields))]
+    [(cons (VRecordT fields-a) (VRecordT fields-b))
+      (and (set=? (list->set (hash-keys fields-a)) (list->set (hash-keys fields-b)))
+        (foldr
+          (λ ([field : Symbol] [res : Boolean])
+            (and res (value=? (hash-ref fields-a field) (hash-ref fields-b field))))
+          #t
+          (hash-keys fields-a)))]
     [(cons a b) (display!= #f a b)]))
 
 (: display!= (-> Boolean Value Value Boolean))
 (define (display!= p a b)
   (unless p
-    (displayln (unparse/expr (quote/value a)))
+    (displayln (unparse/texpr (quote/value a)))
     (displayln '!=)
-    (displayln (unparse/expr (quote/value b))))
+    (displayln (unparse/texpr (quote/value b))))
   p)
 
 (: display!=-neu (-> Boolean Neutral Neutral Boolean))
 (define (display!=-neu p a b)
   (unless p
-    (displayln (unparse/expr (quote/neutral a)))
+    (displayln (unparse/texpr (quote/neutral a)))
     (displayln '!=)
-    (displayln (unparse/expr (quote/neutral b))))
+    (displayln (unparse/texpr (quote/neutral b))))
   p)
 
 (: neutral=? (-> Neutral Neutral Boolean))
@@ -604,6 +698,10 @@
         (value=? false-a false-b))]
     [(cons (NFirst e-a) (NFirst e-b)) (neutral=? e-a e-b)]
     [(cons (NSecond e-a) (NSecond e-b)) (neutral=? e-a e-b)]
+    [(cons (NRecordProj r-a field-a) (NRecordProj r-b field-b))
+      (and
+        (symbol=? field-a field-b)
+        (neutral=? r-a r-b))]
     [(cons a b) (display!=-neu #f a b)]))
 
 (: irrelevant? (-> Value Boolean))
@@ -615,6 +713,12 @@
         (eval/expr
           (env-set env x (VNeu (NVar (gensym)) (lazy (eval/expr env t))))
           b))]
+    [(VRecordT fields)
+      (foldr
+        (λ ([field : Symbol] [res : Boolean])
+          (and res (irrelevant? (hash-ref fields field))))
+        #t
+        (hash-keys fields))]
     [_ #f]))
 
 ;; Type Checking
@@ -822,6 +926,45 @@
         (values (Second e^) s-t))]
     [(StringLit s) (values (StringLit s) (VStringT))]
     [(StringT) (values (StringT) (VType 0 (VLZero)))]
+    [(RecordLit fields)
+      (let
+        ([field-tvs
+            (hash-map/copy fields
+              (λ ([field : Symbol] [v : AstExpr])
+                (let-values
+                  ([(v^ v-t) (synth/expr tenv venv v)])
+                  (values field (cons v^ v-t)))))])
+        (values
+          (RecordLit
+            (hash-map/copy field-tvs
+              (λ ([field : Symbol] [v : (Pairof TypedExpr Value)])
+                (values field (car v)))))
+          (VRecordT
+            (hash-map/copy field-tvs
+              (λ ([field : Symbol] [v : (Pairof TypedExpr Value)])
+                (values field (cdr v)))))))]
+    [(RecordT fields)
+      (match-let
+        ([(list fields^ y x)
+            (foldr
+              (λ ([kv : (Pairof Symbol AstExpr)] [res : (List (Rec TypedExpr) Natural Value)])
+                (match-let*-values
+                  ([((list fields^ y x)) res]
+                   [(v^ v-t-y v-t-x) (synth/expr-type tenv venv (cdr kv))]
+                   [((VType y^ x^)) (tmax v-t-y y v-t-x x)])
+                  (list (hash-set fields^ (car kv) v^) y^ x^)))
+              (list (ann (hash) (Rec TypedExpr)) 0 (VLZero))
+              (hash->list fields))])
+        (values (RecordT fields^) (VType y x)))]
+    [(RecordProj e field)
+      (match-let*-values
+        ([(e^ field-ts) (synth/expr-rec tenv venv e)])
+        (if (hash-has-key? field-ts field)
+          (values (RecordProj e^ field) (hash-ref field-ts field))
+          (error 'synth/expr "Record ~a has of type ~a has no field ~a"
+            (unparse/expr e)
+            (unparse/texpr (quote/value (VRecordT field-ts)))
+            field)))]
     [(TODO)
       (error 'synth/expr
         (string-join
@@ -829,11 +972,22 @@
             (list "")
             (ann
               (for/list ([(x p) tenv] #:when (symbol-interned? x))
-                (format "~a : ~a" x (unparse/expr (quote/value (cdr p)))))
+                (format "~a : ~a" x (unparse/texpr (quote/value (cdr p)))))
               (Listof String))
             (list "--------------------" "?"))
           "\n"))]
     [e (error 'synth/expr "Cannot synthesize type for `~a`" (unparse/expr e))]))
+
+(: synth/expr-rec (-> TEnv VEnv AstExpr (values TypedExpr (Rec Value))))
+(define (synth/expr-rec tenv venv e)
+  (match-let*-values
+    ([(e^ e-t) (synth/expr tenv venv e)])
+    (match (whnf e-t)
+      [(VRecordT fields) (values e^ fields)]
+      [else
+        (error 'synth/expr-rec "Expected `~a` to be a record, but is a `~a`"
+          (unparse/expr e)
+          (unparse/texpr (quote/value e-t)))])))
 
 (: synth/bind (-> TEnv VEnv AstBind (values Symbol TypedExpr Natural Value)))
 (define (synth/bind tenv venv b)
@@ -858,7 +1012,7 @@
       [else
         (error 'synth/expr-type "Expected ~a to be a type, but is a ~a"
           (unparse/expr e)
-          (unparse/expr (quote/value e-t)))])))
+          (unparse/texpr (quote/value e-t)))])))
 
 (: synth/expr-bind (-> BindKind TEnv VEnv AstExpr (values TypedExpr Value)))
 (define (synth/expr-bind k tenv venv e)
@@ -871,7 +1025,7 @@
         (error 'synth/expr-bind "Expected ~a to be a ~a type, but is a ~a"
           (unparse/expr e)
           k
-          (unparse/expr (quote/value e-t)))])))
+          (unparse/texpr (quote/value e-t)))])))
 
 (: synth/expr-level (-> TEnv VEnv AstExpr (values TypedExpr Natural)))
 (define (synth/expr-level tenv venv e)
@@ -883,7 +1037,7 @@
         (error 'synth/expr-level
           "Expected ~a to be a universe level, but is a ~a"
           (unparse/expr e)
-          (unparse/expr (quote/value e-t)))])))
+          (unparse/texpr (quote/value e-t)))])))
 
 (: synth/expr-eq (-> TEnv VEnv AstExpr (values TypedExpr Value)))
 (define (synth/expr-eq tenv venv e)
@@ -894,7 +1048,7 @@
       [else
         (error 'synth/expr-eq "Expected ~a to be an equality type, but is a ~a"
           (unparse/expr e)
-          (unparse/expr (quote/value e-t)))])))
+          (unparse/texpr (quote/value e-t)))])))
 
 (: check/expr (-> TEnv VEnv AstExpr Value TypedExpr))
 (define (check/expr tenv venv e e-t)
@@ -958,9 +1112,9 @@
     [(cons (Refl) (VEqT _ l r)) #:when (value=? l r) (Refl)]
     [(cons (Refl) (VEqT t l r))
       (error 'check/expr "Expected ~a and ~a to be the same ~a"
-        (unparse/expr (quote/value l))
-        (unparse/expr (quote/value r))
-        (unparse/expr (quote/value t)))]
+        (unparse/texpr (quote/value l))
+        (unparse/texpr (quote/value r))
+        (unparse/texpr (quote/value t)))]
     [(cons (Refl) _) (check-mismatch e e-t)]
     [(cons
       (W tag data)
@@ -1001,11 +1155,11 @@
             (list "")
             (ann
               (for/list ([(x p) tenv] #:when (symbol-interned? x))
-                (format "~a : ~a" x (unparse/expr (quote/value (cdr p)))))
+                (format "~a : ~a" x (unparse/texpr (quote/value (cdr p)))))
               (Listof String))
             (list
               "--------------------"
-              (format "? : ~a~n" (unparse/expr (quote/value e-t)))))
+              (format "? : ~a~n" (unparse/texpr (quote/value e-t)))))
           "\n"))]
     [else
       (match-let*-values
@@ -1013,14 +1167,14 @@
         (unless (value=? e-t^ e-t)
           (error 'check/expr "Expected ~a to be of type ~a, but is of type ~a"
             (unparse/expr e)
-            (unparse/expr (quote/value e-t))
-            (unparse/expr (quote/value e-t^))))
+            (unparse/texpr (quote/value e-t))
+            (unparse/texpr (quote/value e-t^))))
         e^)]))
 
 (: check-mismatch (-> AstExpr Value TypedExpr))
 (define (check-mismatch e t)
   (error 'check-mismatch "Expected ~a to be of type ~a"
-    (unparse/expr e) (unparse/expr (quote/value t))))
+    (unparse/expr e) (unparse/texpr (quote/value t))))
 
 (: check/bind (-> TEnv VEnv AstBind Value Symbol))
 (define (check/bind tenv venv b b-t)
@@ -1031,7 +1185,7 @@
         (unless (value=? (eval/expr venv x-t^) b-t)
           (error 'check/bind "Expected binding ~a to be of type ~a"
             (unparse/bind b)
-            (unparse/expr (quote/value b-t))))
+            (unparse/texpr (quote/value b-t))))
         x)]
     [(UntypedBind x) x]))
 
@@ -1096,6 +1250,19 @@
     [(Let x v b) `(let ,(unparse/bind x) ,(unparse/expr v) ,(unparse/expr b))]
     [(StringLit s) s]
     [(StringT) 'String]
+    [(RecordLit fields)
+      `(rec
+         ,@(map
+             (λ ([k : Symbol] [v : Any]) (list k v))
+             (hash-keys fields)
+             (map unparse/expr (hash-values fields))))]
+    [(RecordT fields)
+      `(Rec
+         ,@(map
+             (λ ([k : Symbol] [v : Any]) (list k v))
+             (hash-keys fields)
+             (map unparse/expr (hash-values fields))))]
+    [(RecordProj e field) `(! ,(unparse/expr e) ,field)]
     [(TODO) '?]))
 
 
@@ -1107,6 +1274,75 @@
 
 (: unparse/bind-kind (-> BindKind Any))
 (define (unparse/bind-kind k)
+  (match k
+    ['Pi '->]
+    ['Sigma 'Σ]
+    ['W 'W]))
+
+(: unparse/tapp (-> TypedExpr (Listof Any)))
+(define (unparse/tapp f)
+  (match f
+    [(App f a) `(,@(unparse/tapp f) ,(unparse/texpr a))]
+    [_ `(,(unparse/texpr f))]))
+
+(: unparse/texpr (-> TypedExpr Any))
+(define (unparse/texpr e)
+  (match e
+    [(Var x) x]
+    [(Ann v t) `(,(unparse/texpr v) : ,(unparse/texpr t))]
+    [(Lam x b) `(λ ,(unparse/tbind x) ,(unparse/texpr b))]
+    [(App f a) `(,@(unparse/tapp f) ,(unparse/texpr a))]
+    [(BindT k x b)
+      `(,(unparse/tbind-kind k) ,(unparse/tbind x) ,(unparse/texpr b))]
+    [(Type y x) `(Type ,y ,(unparse/texpr x))]
+    [(LevelT y) `(Level ,y)]
+    [(LZero) 'lzero]
+    [(LSucc l) `(lsucc ,(unparse/texpr l))]
+    [(LMax l r) `(lmax ,(unparse/texpr l) ,(unparse/texpr r))]
+    [(EmptyT) 'Empty]
+    [(IndEmpty l t m) `(ind-Empty ,@(map unparse/texpr (list l t m)))]
+    [(UnitT) 'Unit]
+    [(Unit) '()]
+    [(EqT t l r) `(= ,(unparse/texpr t) ,(unparse/texpr l) ,(unparse/texpr r))]
+    [(Refl) 'Refl]
+    [(IndEq l t m refl) `(ind-= ,@(map unparse/texpr (list l t m refl)))]
+    [(W tag data) `(w ,(unparse/texpr tag) ,(unparse/texpr data))]
+    [(IndW l t m e) `(ind-W ,@(map unparse/texpr (list l t m e)))]
+    [(BoolT) 'Bool]
+    [(Bool #t) 'true]
+    [(Bool #f) 'false]
+    [(IndBool l t m true false)
+      `(ind-Bool ,@(map unparse/texpr (list l t m true false)))]
+    [(Cons f s) `(cons ,(unparse/texpr f) ,(unparse/texpr s))]
+    [(First e) `(first ,(unparse/texpr e))]
+    [(Second e) `(second ,(unparse/texpr e))]
+    [(Let x v b) `(let ,(unparse/tbind x) ,(unparse/texpr v) ,(unparse/texpr b))]
+    [(StringLit s) s]
+    [(StringT) 'String]
+    [(RecordLit fields)
+      `(rec
+         ,@(map
+             (λ ([k : Symbol] [v : Any]) (list k v))
+             (hash-keys fields)
+             (map unparse/texpr (hash-values fields))))]
+    [(RecordT fields)
+      `(Rec
+         ,@(map
+             (λ ([k : Symbol] [v : Any]) (list k v))
+             (hash-keys fields)
+             (map unparse/texpr (hash-values fields))))]
+    [(RecordProj e field) `(! ,(unparse/texpr e) ,field)]
+    [(TODO) '?]))
+
+
+(: unparse/tbind (-> TBind Any))
+(define (unparse/tbind b)
+  (match b
+    [(TypedBind x x-t) `(,x : ,(unparse/texpr x-t))]
+    [(UntypedBind x) x]))
+
+(: unparse/tbind-kind (-> BindKind Any))
+(define (unparse/tbind-kind k)
   (match k
     ['Pi '->]
     ['Sigma 'Σ]
