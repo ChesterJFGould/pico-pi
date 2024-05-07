@@ -44,7 +44,7 @@
     [postalCode (Maybe String)]
     [countryName String]))
 
-(def [AddressValid : (-> Address (Type 0 lzero))]
+(def [AddressValid : (-> AddressData (Type 0 lzero))]
   (λ a
     (So
       (and
@@ -54,7 +54,7 @@
 (def [Address : (Type 0 lzero)]
   (SuchThat AddressData AddressValid))
 
-((An Address AddressCorrect
+((An AddressData AddressValid
    (rec
      [postOfficeBox (Some String "123")]
      [extendedAddress (None String)]
