@@ -1,0 +1,171 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.2 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated as
+% required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+\datalist[entry]{ynt/global//global/global}
+  \entry{MLTT}{book}{}
+    \name{author}{1}{}{%
+      {{hash=NB}{%
+         family={Nordstrom},
+         familyi={N\bibinitperiod},
+         given={Bengt},
+         giveni={B\bibinitperiod},
+      }}%
+    }
+    \list{language}{1}{%
+      {en}%
+    }
+    \list{publisher}{1}{%
+      {Clarendon Press}%
+    }
+    \strng{namehash}{NB1}
+    \strng{fullhash}{NB1}
+    \field{labelnamesource}{author}
+    \field{labeltitlesource}{title}
+    \field{sortinit}{1}
+    \field{sortinithash}{1}
+    \field{series}{International Series of Monographs on Computer Science}
+    \field{title}{Programming in {Martin-L{\"o}f's} type theory : an
+  introduction}
+    \list{location}{1}{%
+      {Oxford, England}%
+    }
+    \field{month}{06}
+    \field{year}{1990}
+  \endentry
+
+  \entry{shake}{inproceedings}{}
+    \name{author}{1}{}{%
+      {{hash=MN}{%
+         family={Mitchell},
+         familyi={M\bibinitperiod},
+         given={Neil},
+         giveni={N\bibinitperiod},
+      }}%
+    }
+    \list{publisher}{1}{%
+      {ACM}%
+    }
+    \strng{namehash}{MN1}
+    \strng{fullhash}{MN1}
+    \field{labelnamesource}{author}
+    \field{labeltitlesource}{title}
+    \field{sortinit}{2}
+    \field{sortinithash}{2}
+    \field{booktitle}{Proceedings of the 17th ACM SIGPLAN international
+  conference on Functional programming}
+    \verb{doi}
+    \verb 10.1145/2364527.2364538
+    \endverb
+    \field{series}{ICFP’12}
+    \field{title}{Shake before building: replacing make with haskell}
+    \verb{url}
+    \verb http://dx.doi.org/10.1145/2364527.2364538
+    \endverb
+    \field{month}{09}
+    \field{year}{2012}
+  \endentry
+
+  \entry{Dunfield2013}{article}{}
+    \name{author}{2}{}{%
+      {{hash=DJ}{%
+         family={Dunfield},
+         familyi={D\bibinitperiod},
+         given={Jana},
+         giveni={J\bibinitperiod},
+      }}%
+      {{hash=KNR}{%
+         family={Krishnaswami},
+         familyi={K\bibinitperiod},
+         given={Neelakantan\bibnamedelima R.},
+         giveni={N\bibinitperiod\bibinitdelim R\bibinitperiod},
+      }}%
+    }
+    \list{publisher}{1}{%
+      {Association for Computing Machinery (ACM)}%
+    }
+    \strng{namehash}{DJKNR1}
+    \strng{fullhash}{DJKNR1}
+    \field{labelnamesource}{author}
+    \field{labeltitlesource}{title}
+    \field{sortinit}{2}
+    \field{sortinithash}{2}
+    \verb{doi}
+    \verb 10.1145/2544174.2500582
+    \endverb
+    \field{issn}{1558-1160}
+    \field{number}{9}
+    \field{pages}{429–442}
+    \field{title}{Complete and easy bidirectional typechecking for higher-rank
+  polymorphism}
+    \verb{url}
+    \verb http://dx.doi.org/10.1145/2544174.2500582
+    \endverb
+    \field{volume}{48}
+    \field{journaltitle}{ACM SIGPLAN Notices}
+    \field{month}{09}
+    \field{year}{2013}
+  \endentry
+
+  \entry{Cockx2021}{article}{}
+    \name{author}{3}{}{%
+      {{hash=CJ}{%
+         family={Cockx},
+         familyi={C\bibinitperiod},
+         given={Jesper},
+         giveni={J\bibinitperiod},
+      }}%
+      {{hash=TN}{%
+         family={Tabareau},
+         familyi={T\bibinitperiod},
+         given={Nicolas},
+         giveni={N\bibinitperiod},
+      }}%
+      {{hash=WT}{%
+         family={Winterhalter},
+         familyi={W\bibinitperiod},
+         given={Théo},
+         giveni={T\bibinitperiod},
+      }}%
+    }
+    \list{publisher}{1}{%
+      {Association for Computing Machinery (ACM)}%
+    }
+    \strng{namehash}{CJTNWT1}
+    \strng{fullhash}{CJTNWT1}
+    \field{labelnamesource}{author}
+    \field{labeltitlesource}{title}
+    \field{sortinit}{2}
+    \field{sortinithash}{2}
+    \verb{doi}
+    \verb 10.1145/3434341
+    \endverb
+    \field{issn}{2475-1421}
+    \field{number}{POPL}
+    \field{pages}{1–29}
+    \field{title}{The taming of the rew: a type theory with computational
+  assumptions}
+    \verb{url}
+    \verb http://dx.doi.org/10.1145/3434341
+    \endverb
+    \field{volume}{5}
+    \field{journaltitle}{Proceedings of the ACM on Programming Languages}
+    \field{month}{01}
+    \field{year}{2021}
+  \endentry
+\enddatalist
+\endinput

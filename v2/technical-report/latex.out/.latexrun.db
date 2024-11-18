@@ -1,0 +1,123 @@
+{
+  "version": "latexrun-db-v2",
+  "tasks": {
+    "latex::main.tex": {
+      "deps": [
+        [
+          "args",
+          [],
+          [
+            "pdflatex",
+            "&mylatexformat",
+            "-interaction",
+            "nonstopmode",
+            "-recorder",
+            "-output-directory",
+            "latex.out",
+            "main.tex"
+          ]
+        ],
+        [
+          "env",
+          [
+            "TEXMFOUTPUT"
+          ],
+          null
+        ],
+        [
+          "env",
+          [
+            "TEXINPUTS"
+          ],
+          null
+        ],
+        [
+          "env",
+          [
+            "TEXFORMATS"
+          ],
+          null
+        ],
+        [
+          "env",
+          [
+            "TEXPOOL"
+          ],
+          null
+        ],
+        [
+          "env",
+          [
+            "TFMFONTS"
+          ],
+          null
+        ],
+        [
+          "env",
+          [
+            "PATH"
+          ],
+          "/home/chester/.opam/default/bin:/opt/texlive/2023/bin/x86_64-linux:/home/chester/go/bin:/home/chester/.local/bin:/home/chester/.cabal/bin:/home/chester/.local/share/idris2/bin:/home/chester/.dotnet:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin:/usr/lib/plan9/bin:/usr/lib/plan9/bin"
+        ],
+        [
+          "unknown_input",
+          [],
+          1713807256.7517467
+        ],
+        [
+          "file",
+          [
+            "texput.fls"
+          ],
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ]
+      ],
+      "output_files": {
+        "texput.fls": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "extra": {
+        "jobname": "texput",
+        "outname": null,
+        "status": 1
+      }
+    },
+    "latex_commit::main.tex": {
+      "deps": [
+        [
+          "latex",
+          [],
+          [
+            0,
+            "latex.out/main.pdf"
+          ]
+        ],
+        [
+          "file",
+          [
+            "latex.out/main.pdf"
+          ],
+          "a5d59b5ccd226dd40d35f18c353310a5642dda1c0a39e3f701dd0060af2c950a"
+        ],
+        [
+          "file",
+          [
+            "main.pdf"
+          ],
+          "a5d59b5ccd226dd40d35f18c353310a5642dda1c0a39e3f701dd0060af2c950a"
+        ]
+      ],
+      "output_files": {
+        "main.pdf": "a5d59b5ccd226dd40d35f18c353310a5642dda1c0a39e3f701dd0060af2c950a"
+      },
+      "extra": null
+    }
+  },
+  "clean": {
+    "latex.out/main.fls": "8c888d70ea312b1efb5870eefbaa8cd6d8e22f580cea666215a5bbac22113cce",
+    "latex.out/main.log": "04921c29de99d855c34859bdbb7f7647bf98362853f4d08f0a02228d5b7b354c",
+    "latex.out/main.aux": "6b0b93859afc1287a48b16109915e885825f8b9f0366c9abfca93bf6d46c7ec4",
+    "latex.out/main.pdf": "a5d59b5ccd226dd40d35f18c353310a5642dda1c0a39e3f701dd0060af2c950a",
+    "main.pdf": "a5d59b5ccd226dd40d35f18c353310a5642dda1c0a39e3f701dd0060af2c950a",
+    "texput.fls": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}
