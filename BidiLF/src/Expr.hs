@@ -9,34 +9,6 @@ import Symbol
 import Syntax qualified as S
 import Typed qualified as T
 
-{-
-data Symbol = Symbol String
-  deriving Eq
-
-data Expr =
-    Var Symbol
-  | App Symbol [Binding]
-
-data Binding = Binding [Symbol] Expr | BindingExpr Expr
-
-data Kind =
-    Constructor ConsType
-  | Destructor DestType
-  | Sort SortType
-  | Meta MetaType
-  | Expr Expr
-
-data Params a = Params [(Symbol, a)]
-
-data ConsType = ConsType (Params MetaType) (Params MetaType) Expr
-
-data DestType = DestType (Params MetaType) (Params Expr) (Params MetaType) Expr
-
-data SortType = SortType (Params MetaType)
-
-data MetaType = MetaType (Params Expr) Expr
--}
-
 data Map k v = Map [(k, v)]
 
 mapEmpty :: Map k v
