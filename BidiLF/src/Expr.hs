@@ -106,6 +106,7 @@ data VCheckPat =
 
 data VSynthPat =
     VDestAppPat Integer [VSynthPat] [VBindingPat]
+  | VMetaAppNoArgsPat Integer
   | VAnnPat VCheckPat VSortPat
   deriving Show
 
@@ -319,6 +320,7 @@ evalSynthPat :: HasCallStack => Map Symbol Integer -> T.SynthPat -> Eval VSynthP
 evalSynthPat m (T.DestAppPat x subjs args) = do
   x' <- evalGetOp x
   VDestAppPat x' <$> traverse (evalSynthPat m) subjs <*> traverse (evalBindingPat m) args
+evalSynthPat m (T.MetaAppNoArgsPat x) = maybe (error "Unbound pattern variable") (pure . VMetaAppNoArgsPat) (mapLookup x m)
 evalSynthPat m (T.AnnPat c t) = VAnnPat <$> evalCheckPat m c <*> evalSortPat m t
 
 evalCheck :: HasCallStack => T.Check -> Eval VCheck
@@ -546,6 +548,7 @@ checkPat impls (T.Synth s) = T.SynthPat <$> synthPat impls s
 
 synthPat :: Set Symbol -> T.Synth -> TC T.SynthPat
 synthPat impls (T.DestApp x subjs args) = T.DestAppPat x <$> traverse (synthPat impls) subjs <*> traverse (bindingPat impls) args
+synthPat _ (T.MetaApp x []) = pure (T.MetaAppNoArgsPat x)
 synthPat impls (T.Ann e t) = T.AnnPat <$> checkPat impls e <*> sortPat impls t
 synthPat _ s = typeError (InvalidSynthPat s)
 
@@ -565,6 +568,7 @@ synthPatUVs (T.DestAppPat _ subjs args) =
   setUnion
     (foldr setUnion setEmpty (map synthPatUVs subjs))
     (foldr setUnion setEmpty (map bindingPatUVs args))
+synthPatUVs (T.MetaAppNoArgsPat x) = setSingleton x
 synthPatUVs (T.AnnPat c t) = setUnion (checkPatUVs c) (sortPatUVs t)
 
 sort :: S.Expr -> TC T.Sort
@@ -782,6 +786,7 @@ unifSynth (VDestAppPat x subjs args) (VDestApp x' subjs' args')
     unifSynths subjs subjs'
     unifBindings args args'
   | otherwise = unifFail
+unifSynth (VMetaAppNoArgsPat x) v = unifVar x (MVal 0 (\[] -> (VSynth v)))
 unifSynth (VAnnPat c t) (VAnn c' t') = do
   unifSort t t'
   unifCheck c c'

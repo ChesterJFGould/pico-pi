@@ -88,3 +88,6 @@
 
 (let eight-again : (Tm Nat)
   (@ (@ + four) four-again))
+
+(let the-two : (Tm (Σ Nat ([n] (= Nat n (S (S Z))))))
+  (cons (S (S Z)) Refl))

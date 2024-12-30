@@ -52,6 +52,7 @@ data CheckPat =
 
 data SynthPat =
     DestAppPat Symbol [SynthPat] [BindingPat]
+  | MetaAppNoArgsPat Symbol
   | AnnPat CheckPat SortPat
   deriving Eq
 
